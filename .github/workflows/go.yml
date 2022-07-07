@@ -19,7 +19,6 @@ jobs:
       uses: actions/checkout@v2
       with:
         fetch-depth: 1
-        path: go/src/github.com/flexera-public/wstunnel
     - name: Debug
       run: |
         pwd
