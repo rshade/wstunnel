@@ -38,6 +38,8 @@ jobs:
       run: go mod tidy
       env:
         GOPATH: /home/runner/work/wstunnel/go
+    - name: Run Revive Action by pulling pre-built image
+      uses: docker://morphy/revive-action:v2
     - name: Test
       run: |
         make depend
