@@ -1,15 +1,9 @@
 name: Go
-env:
-  GOPATH: ${{ github.workspace }}
-  GOBIN: ${{ github.workspace }}/bin
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-defaults:
-  run:
-    working-directory: ${{ github.workspace }}/src/wstunnel
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,8 +23,10 @@ jobs:
         echo ${GITHUB_WORKSPACE}
         echo ${GOPATH}
         echo ${GOROOT}
-    - name: make-depend
-      run: make depend
+        go get -u golang.org/x/tools/cmd/cover
+        go get -u github.com/rlmcpherson/s3gof3r/gof3r
+        go get -u github.com/onsi/ginkgo/ginkgo
+        go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
     - name: Build
       run: make build
     - name: Tidy
@@ -41,3 +37,4 @@ jobs:
       run: |
         make depend
         find . -name ginkgo
+        ${GOPATH}/bin/ginkgo -r -cover
