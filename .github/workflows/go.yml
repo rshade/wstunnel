@@ -17,8 +17,6 @@ jobs:
         go-version: 1.18
     - name: Checkout Code
       uses: actions/checkout@v2
-      with:
-        fetch-depth: 1
     - name: Debug
       run: |
         pwd
@@ -41,7 +39,10 @@ jobs:
       env:
         GOPATH: /home/runner/work/wstunnel/go
     - name: Test
-      run: make test
+      run: |
+        make depend
+        find . -name ginkgo
+        make test
       env:
         GOPATH: /home/runner/work/wstunnel/go
 
