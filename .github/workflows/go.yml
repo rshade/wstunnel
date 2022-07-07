@@ -23,10 +23,9 @@ jobs:
         echo ${GITHUB_WORKSPACE}
         echo ${GOPATH}
         echo ${GOROOT}
-        go install golang.org/x/tools/cmd/cover
-        go install github.com/rlmcpherson/s3gof3r/gof3r
-        go install github.com/onsi/ginkgo/ginkgo
-        go install github.com/git-chglog/git-chglog/cmd/git-chglog
+        go install golang.org/x/tools/cmd/cover@latest
+        go install github.com/onsi/ginkgo/ginkgo@v1.16.5
+        go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
     - name: Build
       run: make build
     - name: Tidy
