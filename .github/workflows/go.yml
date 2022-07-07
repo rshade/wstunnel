@@ -9,7 +9,7 @@ on:
     branches: [ master ]
 defaults:
   run:
-    working-directory: ${{ $GOPATH }}/src/wstunnel
+    working-directory: ${{ github.workspace }}/src/wstunnel
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,7 +21,7 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v2
       with:
-        path: ${{ $GOPATH }}/src/myproject
+        path: ${{ github.workspace }}/src/myproject
     - name: Debug
       run: |
         pwd
