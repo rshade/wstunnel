@@ -14,8 +14,6 @@ jobs:
         go-version: 1.18
     - name: Checkout Code
       uses: actions/checkout@v2
-      with:
-        path: ${{ github.workspace }}/src/myproject
     - name: Debug
       run: |
         pwd
