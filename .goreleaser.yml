@@ -1,0 +1,19 @@
+builds:
+- binary: wstunnel
+  env:
+  - GO111MODULE=on
+  goarch:
+  - amd64
+  - arm64
+  - 386
+  goos:
+  - darwin
+  - windows
+  - linux
+ignore:
+  - goos: windows
+    goarch: arm64
+  - goos: windows
+    goarch: 386
+  - goos: darwin
+    goarch: 386

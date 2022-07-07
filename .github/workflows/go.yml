@@ -42,7 +42,5 @@ jobs:
       run: |
         make depend
         find . -name ginkgo
-        make test
       env:
         GOPATH: /home/runner/work/wstunnel/go
-
