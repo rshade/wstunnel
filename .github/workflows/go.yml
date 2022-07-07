@@ -1,5 +1,7 @@
 name: Go
-
+env:
+  GOPATH: ${{ github.workspace }}
+  GOBIN: ${{ github.workspace }}/bin
 on:
   push:
     branches: [ master ]
@@ -7,7 +9,6 @@ on:
     branches: [ master ]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
@@ -24,25 +25,15 @@ jobs:
         echo ${GITHUB_WORKSPACE}
         echo ${GOPATH}
         echo ${GOROOT}
-      env:
-        GOPATH: /home/runner/work/wstunnel/go
     - name: make-depend
       run: make depend
-      env:
-        GOPATH: /home/runner/work/wstunnel/go
     - name: Build
       run: make build
-      env:
-        GOPATH: /home/runner/work/wstunnel/go
     - name: Tidy
       run: go mod tidy
-      env:
-        GOPATH: /home/runner/work/wstunnel/go
     - name: Run Revive Action by pulling pre-built image
       uses: docker://morphy/revive-action:v2
     - name: Test
       run: |
         make depend
         find . -name ginkgo
-      env:
-        GOPATH: /home/runner/work/wstunnel/go
