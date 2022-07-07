@@ -32,6 +32,4 @@ jobs:
       uses: docker://morphy/revive-action:v2
     - name: Test
       run: |
-        make depend
-        find . -name ginkgo
-        ${GOPATH}/bin/ginkgo -r -cover
+        ginkgo -r -cover
