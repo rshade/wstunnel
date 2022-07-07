@@ -11,19 +11,38 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
         go-version: 1.18
+    - name: Checkout Code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+        path: go/src/github.com/flexera-public/wstunnel
+    - name: Debug
+      run: |
+        pwd
+        echo ${HOME}
+        echo ${GITHUB_WORKSPACE}
+        echo ${GOPATH}
+        echo ${GOROOT}
+      env:
+        GOPATH: /home/runner/work/wstunnel/go
     - name: make-depend
       run: make depend
+      env:
+        GOPATH: /home/runner/work/wstunnel/go
     - name: Build
       run: make build
+      env:
+        GOPATH: /home/runner/work/wstunnel/go
     - name: Tidy
       run: go mod tidy
-
+      env:
+        GOPATH: /home/runner/work/wstunnel/go
     - name: Test
       run: make test
+      env:
+        GOPATH: /home/runner/work/wstunnel/go
 
