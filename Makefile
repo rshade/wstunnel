@@ -112,7 +112,7 @@ version:
 # Travis doing this. The folllowing just relies on go get no reinstalling when it's already
 # there, like your laptop.
 depend:
-	go get $(DEPEND)
+	go get -u $(DEPEND)
 
 clean:
 	@echo "package main; const VV = \"$(NAME) unversioned - $(DATE)\"" >version.go
@@ -126,12 +126,12 @@ lint:
 	go vet ./...
 
 travis-test: lint
-	ginkgo -r -cover
+	$(GOPATH)/bin/ginkgo -r -cover
 
 # running ginkgo twice, sadly, the problem is that -cover modifies the source code with the effect
 # that if there are errors the output of gingko refers to incorrect line numbers
 # tip: if you don't like colors use ginkgo -r -noColor
-test: lint
-	ginkgo -r
-	ginkgo -r -cover
+test: lint depend
+	$(GOPATH)/bin/ginkgo -r
+	$(GOPATH)/bin/ginkgo -r -cover
 	go tool cover -func=`basename $$PWD`.coverprofile
