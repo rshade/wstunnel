@@ -19,9 +19,6 @@ jobs:
       -
         name: Set up Go
         uses: actions/setup-go@v3
-      - 
-        name: make-depend
-        run: make depend
       -
         name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v3
@@ -36,5 +33,5 @@ jobs:
         name: Upload assets
         uses: actions/upload-artifact@v3
         with:
-          name: myapp
+          name: wstunnel
           path: dist/*
