@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0
 	github.com/huandu/xstrings v1.3.2 // indirect
-	github.com/imdario/mergo v0.3.13 // indirect
+	github.com/imdario/mergo v0.3.14 // indirect
 	github.com/jessevdk/go-flags v1.5.0 // indirect
 	github.com/kyokomi/emoji/v2 v2.2.9 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
