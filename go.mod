@@ -13,4 +13,4 @@ require (
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
 )
 
-replace github.com/imdario/mergo => dario.cat/mergo latest
+replace github.com/imdario/mergo => dario.cat/mergo
