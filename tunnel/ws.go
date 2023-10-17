@@ -81,7 +81,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(rs, ws, t.WSTimeout, ch, &rs.readWG)
+	go wsReader(rs, ws, ch, &rs.readWG)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
@@ -167,7 +167,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int, readWG *sync.WaitGroup) {
+func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int, readWG *sync.WaitGroup) {
 	var err error
 	logToken := cutToken(rs.token)
 	// continue reading until we get an error
@@ -188,8 +188,6 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			err = fmt.Errorf("non-binary message received, type=%d", t)
 			break
 		}
-		// give the sender a fixed time to get us the data
-		ws.SetReadDeadline(time.Now().Add(wsTimeout))
 		// get request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)

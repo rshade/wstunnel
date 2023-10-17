@@ -386,8 +386,6 @@ func (wsc *WSConnection) handleRequests() {
 			wsc.Log.Warn("WS   invalid message type", "type", typ)
 			break
 		}
-		// give the sender a minute to produce the request
-		wsc.ws.SetReadDeadline(time.Now().Add(time.Minute))
 		// read request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
