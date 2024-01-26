@@ -1,4 +1,4 @@
-module github.com/rightscale/wstunnel
+module github.com/mapero/wstunnel
 
 go 1.22
 
