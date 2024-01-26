@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rightscale/wstunnel/whois"
+	"github.com/mapero/wstunnel/whois"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 

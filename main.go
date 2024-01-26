@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rightscale/wstunnel/tunnel"
-	"github.com/rightscale/wstunnel/whois"
+	"github.com/mapero/wstunnel/tunnel"
+	"github.com/mapero/wstunnel/whois"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
