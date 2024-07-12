@@ -81,9 +81,9 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(rs, ws, t.WSTimeout, ch, &rs.readWG)
+	go wsReader(rs, ws, ch, &rs.readWG)
 	// Send requests
-	wsWriter(rs, ws, t.WSTimeout, ch)
+	wsWriter(rs, ws, ch)
 }
 
 func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
@@ -108,7 +108,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 }
 
 // Pick requests off the RemoteServer queue and send them into the tunnel
-func wsWriter(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
+func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	var req *remoteRequest
 	var err error
 	for {
@@ -133,7 +133,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			continue
 		}
 		// write the request into the tunnel
-		ws.SetWriteDeadline(time.Now().Add(wsTimeout))
+		ws.SetWriteDeadline(time.Time{}) // no timeout, there's the ping-pong for that
 		var w io.WriteCloser
 		w, err = ws.NextWriter(websocket.BinaryMessage)
 		// got an error, reply with a "hey, retry" to the request handler
@@ -167,7 +167,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int, readWG *sync.WaitGroup) {
+func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int, readWG *sync.WaitGroup) {
 	var err error
 	logToken := cutToken(rs.token)
 	// continue reading until we get an error
@@ -188,8 +188,6 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			err = fmt.Errorf("non-binary message received, type=%d", t)
 			break
 		}
-		// give the sender a fixed time to get us the data
-		ws.SetReadDeadline(time.Now().Add(wsTimeout))
 		// get request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
