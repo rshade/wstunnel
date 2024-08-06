@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
-	github.com/gorilla/websocket v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.34.1
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
