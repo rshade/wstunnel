@@ -77,7 +77,8 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
-	readWG          sync.WaitGroup
+	readMutex       sync.Mutex               // ensure that no more than one goroutine calls the websocket read methods concurrently
+	readCond        *sync.Cond               // (NextReader, SetReadDeadline, SetPingHandler, ...)
 }
 
 // WSTunnelServer a wstunnel server construct
@@ -350,8 +351,10 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// Ensure we retire the request when we pop out of this function
+	// and release the lock on reading new requests
 	defer func() {
 		rs.RetireRequest(req)
+		rs.readCond.Signal()
 	}()
 
 	// enqueue request
@@ -373,7 +376,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	case resp := <-req.replyChan:
 		// if there's no error just respond
 		if resp.err == nil {
-			code := writeResponse(rs, w, resp.response)
+			code := writeResponse(w, resp.response)
 			req.log.Info("HTTP RET", "status", code)
 			return
 		}
@@ -427,6 +430,7 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          log15.New("token", cutToken(tok)),
 	}
+	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
 	return rs
 }
@@ -499,8 +503,7 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func writeResponse(rs *remoteServer, w http.ResponseWriter, r io.Reader) int {
-	defer rs.readWG.Done()
+func writeResponse(w http.ResponseWriter, r io.Reader) int {
 	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)
