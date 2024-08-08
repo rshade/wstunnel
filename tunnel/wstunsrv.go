@@ -354,7 +354,9 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	// and release the lock on reading new requests
 	defer func() {
 		rs.RetireRequest(req)
-		rs.readCond.Signal()
+		if !retry {
+			rs.readCond.Signal()
+		}
 	}()
 
 	// enqueue request
