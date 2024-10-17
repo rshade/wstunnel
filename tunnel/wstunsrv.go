@@ -77,8 +77,8 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
-	readMutex       sync.Mutex               // ensure that no more than one goroutine calls the websocket read methods concurrently
-	readCond        *sync.Cond               // (NextReader, SetReadDeadline, SetPingHandler, ...)
+	readMutex       sync.Mutex // ensure that no more than one goroutine calls the websocket read methods concurrently
+	readCond        *sync.Cond // (NextReader, SetReadDeadline, SetPingHandler, ...)
 }
 
 // WSTunnelServer a wstunnel server construct
@@ -351,12 +351,6 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// Ensure we retire the request when we pop out of this function
-<<<<<<< HEAD
-	// and release the lock on reading new requests
-	defer func() {
-		rs.RetireRequest(req)
-		rs.readCond.Signal()
-=======
 	// and signal the tunnel reader to continue
 	defer func() {
 		rs.RetireRequest(req)
@@ -365,7 +359,6 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			rs.readCond.Signal()
 			rs.readCond.L.Unlock()
 		}
->>>>>>> mporsch/fix-sync-waitgroup-reused-2
 	}()
 
 	// enqueue request
