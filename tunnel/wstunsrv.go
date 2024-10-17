@@ -351,10 +351,21 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// Ensure we retire the request when we pop out of this function
+<<<<<<< HEAD
 	// and release the lock on reading new requests
 	defer func() {
 		rs.RetireRequest(req)
 		rs.readCond.Signal()
+=======
+	// and signal the tunnel reader to continue
+	defer func() {
+		rs.RetireRequest(req)
+		if !retry {
+			rs.readCond.L.Lock() // make sure the reader is in Wait()
+			rs.readCond.Signal()
+			rs.readCond.L.Unlock()
+		}
+>>>>>>> mporsch/fix-sync-waitgroup-reused-2
 	}()
 
 	// enqueue request
@@ -371,6 +382,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 	req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
 		"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
+
 	// wait for response
 	select {
 	case resp := <-req.replyChan:
