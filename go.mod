@@ -7,7 +7,7 @@ require (
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.35.1
+	github.com/onsi/gomega v1.36.1
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
 )
 
