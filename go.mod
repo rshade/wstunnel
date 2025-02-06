@@ -1,7 +1,6 @@
 module github.com/mapero/wstunnel
 
-go 1.22
-toolchain go1.22.5
+go 1.23
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
