@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mapero/wstunnel/tunnel"
-	"github.com/mapero/wstunnel/whois"
+	"github.com/rshade/wstunnel/tunnel"
+	"github.com/rshade/wstunnel/whois"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -40,7 +40,7 @@ func main() {
 		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv] [-options...]", os.Args[0]))
 		os.Exit(1)
 	}
-	<-make(chan struct{}, 0)
+	<-make(chan struct{})
 }
 
 func lookupWhois(args []string) {

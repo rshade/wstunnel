@@ -25,11 +25,11 @@ func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code 
 }
 
 // websocket error constants
-const (
-	wsReadClose  = iota
-	wsReadError  = iota
-	wsWriteError = iota
-)
+// const (
+// 	wsReadClose  = iota
+// 	wsReadError  = iota
+// 	wsWriteError = iota
+// )
 
 func wsp(ws *websocket.Conn) string { return fmt.Sprintf("%p", ws) }
 
@@ -53,13 +53,18 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}
 	logTok := cutToken(token(tok))
 	// Upgrade to web sockets
-	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
-	if _, ok := err.(websocket.HandshakeError); ok {
-		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
-			"err", "Not a websocket handshake")
-		httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
-		return
-	} else if err != nil {
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  100 * 1024,
+		WriteBufferSize: 100 * 1024,
+	}
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		if _, ok := err.(websocket.HandshakeError); ok {
+			t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
+				"err", "Not a websocket handshake")
+			httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
+			return
+		}
 		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
 			"err", err.Error())
 		httpError(t.Log, w, logTok, err.Error(), 400)
@@ -88,7 +93,9 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
-		ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
+		if err := ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second)); err != nil {
+			rs.log.Error("Error writing control message", "err", err)
+		}
 		time.Sleep(5 * time.Second)
 		rs.log.Info("WS closing due to ping timeout", "ws", wsp(ws))
 		ws.Close()
@@ -98,7 +105,10 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	// ping handler resets last ping time
 	ph := func(message string) error {
 		timer.Reset(t.WSTimeout)
-		ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(t.WSTimeout/3))
+		if err := ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(t.WSTimeout/3)); err != nil {
+			rs.log.Error("Error writing pong message", "err", err)
+			return err
+		}
 		// update lastActivity
 		rs.lastActivity = time.Now()
 		return nil
@@ -115,7 +125,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		select {
 		case req = <-rs.requestQueue:
 			// awesome...
-		case _ = <-ch:
+		case <-ch:
 			// time to close shop
 			rs.log.Info("WS closing on signal", "ws", wsp(ws))
 			ws.Close()
@@ -125,14 +135,17 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		// See whether the request has already expired
 		if req.deadline.Before(time.Now()) {
 			req.replyChan <- responseBuffer{
-				err: errors.New("Timeout before forwarding the request"),
+				err: errors.New("timeout before forwarding the request"),
 			}
 			req.log.Info("WS   SND timeout before sending", "ago",
-				time.Now().Sub(req.deadline).Seconds())
+				time.Since(req.deadline).Seconds())
 			continue
 		}
 		// write the request into the tunnel
-		ws.SetWriteDeadline(time.Time{}) // no timeout, there's the ping-pong for that
+		if err = ws.SetWriteDeadline(time.Time{}); err != nil {
+			rs.log.Error("Failed to set write deadline", "err", err)
+			break // Break out of write loop on error
+		}
 		var w io.WriteCloser
 		w, err = ws.NextWriter(websocket.BinaryMessage)
 		// got an error, reply with a "hey, retry" to the request handler
@@ -160,7 +173,9 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	req.replyChan <- responseBuffer{err: ErrRetry}
 	req.log.Info("WS error causes retry")
 	// close up shop
-	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
+	if err := ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+		rs.log.Error("Error writing control message", "err", err)
+	}
 	time.Sleep(2 * time.Second)
 	ws.Close()
 }
@@ -179,7 +194,10 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 
 	// continue reading until we get an error
 	for {
-		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
+		if err = ws.SetReadDeadline(time.Time{}); err != nil {
+			rs.log.Error("Failed to set read deadline", "err", err)
+			break // Break out of read loop on error
+		}
 		// read a message from the tunnel
 		var t int
 		var r io.Reader

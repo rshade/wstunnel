@@ -5,10 +5,11 @@ package tunnel
 // Omega: Alt+937
 
 import (
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -45,7 +46,10 @@ var _ = Describe("Testing misc requests", func() {
 			"-server", server.URL(),
 			"-timeout", "3",
 		})
-		wstuncli.Start()
+		if err := wstuncli.Start(); err != nil {
+			log15.Error("Error starting client", "error", err)
+			os.Exit(1)
+		}
 		wstunURL = "http://" + listener.Addr().String()
 		for !wstuncli.Connected {
 			time.Sleep(10 * time.Millisecond)
@@ -61,7 +65,7 @@ var _ = Describe("Testing misc requests", func() {
 	It("Errors non-existing tunnels", func() {
 		resp, err := http.Get(wstunURL + "/_token/badtokenbadtoken/hello")
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(ContainSubstring("long time"))
 		Ω(resp.Header.Get("Content-Type")).Should(ContainSubstring("text/plain"))
@@ -85,7 +89,7 @@ var _ = Describe("Testing misc requests", func() {
 		// first request
 		resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(Equal("WORLD"))
 		Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -98,7 +102,7 @@ var _ = Describe("Testing misc requests", func() {
 		// second request
 		resp, err = http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err = ioutil.ReadAll(resp.Body)
+		respBody, err = io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(Equal("AGAIN"))
 		Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))

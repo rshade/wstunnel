@@ -1,4 +1,4 @@
-module github.com/mapero/wstunnel
+module github.com/rshade/wstunnel
 
 go 1.23
 
@@ -6,7 +6,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3
-	github.com/onsi/ginkgo/v2 v2.22.2
+	github.com/onsi/ginkgo/v2 v2.22.2 // indirect
 	github.com/onsi/gomega v1.36.2
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
 )

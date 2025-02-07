@@ -5,7 +5,7 @@ package tunnel
 // Omega: Alt+937
 
 import (
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -42,7 +42,8 @@ var _ = Describe("Testing xhost requests", func() {
 				"-token", wstunToken, "-tunnel", "ws://" + l.Addr().String(),
 				"-server", server, "-regexp", regexp,
 			})
-			wstuncli.Start()
+			err := wstuncli.Start()
+			Ω(err).ShouldNot(HaveOccurred(), "Failed to start WSTunnel client")
 			// wait for client to connect so we don't get a "tunnel never seen" response
 			for !wstuncli.Connected {
 				time.Sleep(10 * time.Millisecond)
@@ -75,7 +76,7 @@ var _ = Describe("Testing xhost requests", func() {
 		req.Header.Set("X-Host", server.URL())
 		resp, err := http.DefaultClient.Do(req)
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(Equal("HOSTED"))
 		Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -95,7 +96,7 @@ var _ = Describe("Testing xhost requests", func() {
 		req.Header.Set("X-Host", "http://google.com/"+server.URL())
 		resp, err := http.DefaultClient.Do(req)
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(ContainSubstring("does not match regexp"))
 		Ω(resp.StatusCode).Should(Equal(403))
@@ -114,7 +115,7 @@ var _ = Describe("Testing xhost requests", func() {
 		Ω(err).ShouldNot(HaveOccurred())
 		resp, err := http.DefaultClient.Do(req)
 		Ω(err).ShouldNot(HaveOccurred())
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(Equal("HOSTED"))
 		Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))

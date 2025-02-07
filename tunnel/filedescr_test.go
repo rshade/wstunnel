@@ -7,7 +7,7 @@ package tunnel
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -86,7 +86,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 			txt := fmt.Sprintf("/hello/%d", i)
 			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + txt)
 			Ω(err).ShouldNot(HaveOccurred())
-			respBody, err := ioutil.ReadAll(resp.Body)
+			respBody, err := io.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(string(respBody)).Should(Equal(txt))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))

@@ -8,12 +8,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -50,7 +50,9 @@ func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "CONNECT" {
 		errMsg := "CONNECT not passed to proxy"
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(errMsg))
+		if _, err := w.Write([]byte(errMsg)); err != nil {
+			proxyErrorLog += fmt.Sprintf("Error writing response: %s\n", err)
+		}
 		proxyErrorLog += errMsg
 		return
 	}
@@ -58,7 +60,9 @@ func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		errMsg := "Typecast to hijack failed!"
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(errMsg))
+		if _, err := w.Write([]byte(errMsg)); err != nil {
+			proxyErrorLog += fmt.Sprintf("Error writing response: %s\n", err)
+		}
 		proxyErrorLog += errMsg
 		return
 	}
@@ -68,7 +72,9 @@ func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errMsg := "Cannot establish connection to upstream server!"
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(errMsg))
+		if _, err := w.Write([]byte(errMsg)); err != nil {
+			proxyErrorLog += fmt.Sprintf("Error writing response: %s\n", err)
+		}
 		proxyErrorLog += errMsg
 		return
 	}
@@ -77,13 +83,18 @@ func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errMsg := "Cannot Hijack connection!"
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(errMsg))
+		if _, err := w.Write([]byte(errMsg)); err != nil {
+			proxyErrorLog += fmt.Sprintf("Error writing response: %s\n", err)
+		}
 		proxyErrorLog += errMsg
 		return
 	}
 
 	res := fmt.Sprintf("%s 200 OK\r\n\r\n", r.Proto)
-	proxyClient.Write([]byte(res))
+	if _, err := proxyClient.Write([]byte(res)); err != nil {
+		proxyErrorLog += fmt.Sprintf("Error writing response: %s\n", err)
+		return
+	}
 
 	// Transparent pass through from now on
 	go copyAndClose(targetSite, proxyClient)
@@ -100,7 +111,10 @@ var startClient = func(wstunToken string, wstunHost string, proxy *url.URL, serv
 		Log:            log15.Root().New("pkg", "WStuncli"),
 		InternalServer: server,
 	}
-	wstuncli.Start()
+	if err := wstuncli.Start(); err != nil {
+		log15.Error("Error starting client", "error", err)
+		os.Exit(1)
+	}
 	log15.Info("Client started")
 	return wstuncli
 }
@@ -143,7 +157,7 @@ var _ = Describe("Testing requests", func() {
 
 			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 			Ω(err).ShouldNot(HaveOccurred())
-			respBody, err := ioutil.ReadAll(resp.Body)
+			respBody, err := io.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(string(respBody)).Should(Equal("WORLD"))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -174,7 +188,7 @@ var _ = Describe("Testing requests", func() {
 			resp, err := http.Post(wstunURL+"/_token/"+wstunToken+"/large-request",
 				"text/binary", bytes.NewReader(reqBody))
 			Ω(err).ShouldNot(HaveOccurred())
-			respBody, err := ioutil.ReadAll(resp.Body)
+			respBody, err := io.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(string(respBody)).Should(Equal("WORLD"))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -202,7 +216,7 @@ var _ = Describe("Testing requests", func() {
 
 			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/large-response")
 			Ω(err).ShouldNot(HaveOccurred())
-			respRecv, err := ioutil.ReadAll(resp.Body)
+			respRecv, err := io.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(respRecv).Should(Equal(respBody))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/binary"))
@@ -222,7 +236,7 @@ var _ = Describe("Testing requests", func() {
 
 			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 			Ω(err).ShouldNot(HaveOccurred())
-			respBody, err := ioutil.ReadAll(resp.Body)
+			respBody, err := io.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(string(respBody)).Should(Equal("WORLD"))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -249,7 +263,7 @@ var _ = Describe("Testing requests", func() {
 				txt := fmt.Sprintf("/hello/%d", i)
 				resp, err := http.Get(wstunURL + "/_token/" + wstunToken + txt)
 				Ω(err).ShouldNot(HaveOccurred())
-				respBody, err := ioutil.ReadAll(resp.Body)
+				respBody, err := io.ReadAll(resp.Body)
 				Ω(err).ShouldNot(HaveOccurred())
 				Ω(string(respBody)).Should(Equal(txt))
 				Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -272,12 +286,14 @@ var _ = Describe("Testing requests", func() {
 						time.Sleep(time.Duration(10*i) * time.Millisecond)
 						w.Header().Set("Content-Type", "text/world")
 						w.WriteHeader(200)
-						w.Write([]byte(fmt.Sprintf("/hello/%d", i)))
+						if _, err := w.Write([]byte(fmt.Sprintf("/hello/%d", i))); err != nil {
+							log15.Error("Error writing response", "error", err)
+						}
 					}
 				})
 
-			resp := make([]*http.Response, N, N)
-			err := make([]error, N, N)
+			resp := make([]*http.Response, N)
+			err := make([]error, N)
 			wg := sync.WaitGroup{}
 			wg.Add(N)
 			for i := 0; i < N; i++ {
@@ -291,7 +307,7 @@ var _ = Describe("Testing requests", func() {
 			for i := 0; i < N; i++ {
 				txt := fmt.Sprintf("/hello/%d", i)
 				Ω(err[i]).ShouldNot(HaveOccurred())
-				respBody, err := ioutil.ReadAll(resp[i].Body)
+				respBody, err := io.ReadAll(resp[i].Body)
 				Ω(err).ShouldNot(HaveOccurred())
 				Ω(string(respBody)).Should(Equal(txt))
 				Ω(resp[i].Header.Get("Content-Type")).Should(Equal("text/world"))
@@ -355,12 +371,16 @@ var _ = Describe("Testing requests", func() {
 			log15.Info("Client started")
 
 			startClient = func(wstunToken string, wstunHost string, proxy *url.URL, server *ghttp.Server) *WSTunnelClient {
+				fmt.Printf("Starting client with token %s, and proxy %s\n", wstunToken, proxy)
 				wstuncli = NewWSTunnelClient([]string{
 					"-token", wstunToken,
 					"-tunnel", "ws://" + wstunHost,
 					"-server", server.URL(),
 				})
-				wstuncli.Start()
+				if err := wstuncli.Start(); err != nil {
+					log15.Error("Error starting client", "error", err)
+					os.Exit(1)
+				}
 				return wstuncli
 			}
 
