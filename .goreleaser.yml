@@ -1,4 +1,5 @@
 # .goreleaser.yml
+version: 2
 project_name: wstunnel
 
 before:
@@ -46,8 +47,17 @@ checksum:
   name_template: 'checksums.txt'
 
 changelog:
+  use: git # or github
   sort: asc
-  use: github-native # or git
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
   filters:
     exclude:
       - '^docs:'
@@ -57,7 +67,9 @@ changelog:
       - Merge branch
 
 release:
+  draft: false
   prerelease: auto
+  mode: replace
   header: |
     See [CHANGELOG.md](CHANGELOG.md) for all changes.
   footer: |
