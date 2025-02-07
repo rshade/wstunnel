@@ -1,18 +1,18 @@
 # ChangeLog
 
-## [1.0.7](https://github.com/rightscale/wstunnel/compare/1.0.6...1.0.7)
+## [1.0.7](https://github.com/rshade/wstunnel/compare/1.0.6...1.0.7)
 
 ### Add
 
-* Add Support for Wstuncli port range ([#35](https://github.com/rightscale/wstunnel/issues/35))
-* Add support for binding to the specific host ([#23](https://github.com/rightscale/wstunnel/issues/23)) ([#36](https://github.com/rightscale/wstunnel/issues/36))
+* Add Support for Wstuncli port range ([#35](https://github.com/rshade/wstunnel/issues/35))
+* Add support for binding to the specific host ([#23](https://github.com/rshade/wstunnel/issues/23)) ([#36](https://github.com/rshade/wstunnel/issues/36))
 * Add windows support.
 * Add ginkgo binary as a dependency
 * Add comments to readme
 
 ### Build
 
-* Build and Upload, fixes [#34](https://github.com/rightscale/wstunnel/issues/34) ([#38](https://github.com/rightscale/wstunnel/issues/38))
+* Build and Upload, fixes [#34](https://github.com/rshade/wstunnel/issues/34) ([#38](https://github.com/rshade/wstunnel/issues/38))
 
 ### Correct
 
@@ -27,7 +27,7 @@
 
 ### Make
 
-* Make GoLint Happy ([#37](https://github.com/rightscale/wstunnel/issues/37))
+* Make GoLint Happy ([#37](https://github.com/rshade/wstunnel/issues/37))
 * Make Travis CI happy as well as the Windows build
 * Make version.go editing work for Travis
 
@@ -49,12 +49,12 @@
 
 ### Pull Requests
 
-* Merge pull request [#21](https://github.com/rightscale/wstunnel/issues/21) from chribben/patch-1
-* Merge pull request [#29](https://github.com/rightscale/wstunnel/issues/29) from rightscale/ZD156280-1
-* Merge pull request [#28](https://github.com/rightscale/wstunnel/issues/28) from rightscale/ph-update-dependencies
-* Merge pull request [#25](https://github.com/rightscale/wstunnel/issues/25) from flaccid/patch-1
+* Merge pull request [#21](https://github.com/rshade/wstunnel/issues/21) from chribben/patch-1
+* Merge pull request [#29](https://github.com/rshade/wstunnel/issues/29) from rightscale/ZD156280-1
+* Merge pull request [#28](https://github.com/rshade/wstunnel/issues/28) from rightscale/ph-update-dependencies
+* Merge pull request [#25](https://github.com/rshade/wstunnel/issues/25) from flaccid/patch-1
 
-## [1.0.6](https://github.com/rightscale/wstunnel/compare/1.0.5...1.0.6)
+## [1.0.6](https://github.com/rshade/wstunnel/compare/1.0.5...1.0.6)
 
 ### Add
 
@@ -73,14 +73,14 @@
 
 ### Try
 
-* try to fix test race condition [#2](https://github.com/rightscale/wstunnel/issues/2)
+* try to fix test race condition [#2](https://github.com/rshade/wstunnel/issues/2)
 * try to fix test race condition
 
 ### Tweak
 
 * tweak debug output
 
-## [1.0.5](https://github.com/rightscale/wstunnel/compare/1.0.4...1.0.5)
+## [1.0.5](https://github.com/rshade/wstunnel/compare/1.0.4...1.0.5)
 
 ### Added
 
@@ -106,9 +106,9 @@
 
 ### Pull Requests
 
-* Merge pull request [#16](https://github.com/rightscale/wstunnel/issues/16) from rightscale/IV-2077_proxy
+* Merge pull request [#16](https://github.com/rshade/wstunnel/issues/16) from rightscale/IV-2077_proxy
 
-## [1.0.4](https://github.com/rightscale/wstunnel/compare/1.0.3...1.0.4)
+## [1.0.4](https://github.com/rshade/wstunnel/compare/1.0.3...1.0.4)
 
 ### Attempt
 
@@ -122,13 +122,13 @@
 
 * update readme
 
-## [1.0.3](https://github.com/rightscale/wstunnel/compare/1.0.2...1.0.3)
+## [1.0.3](https://github.com/rshade/wstunnel/compare/1.0.2...1.0.3)
 
 ### Fix
 
 * fix non-remove requests on tunnel abort; fix non-reopening of WS at client
 
-## [1.0.2](https://github.com/rightscale/wstunnel/compare/1.0.1...1.0.2)
+## [1.0.2](https://github.com/rshade/wstunnel/compare/1.0.1...1.0.2)
 
 ### Added
 
@@ -142,7 +142,7 @@
 
 * tweak readme
 
-## [1.0.1](https://github.com/rightscale/wstunnel/compare/1.0.0...1.0.1)
+## [1.0.1](https://github.com/rshade/wstunnel/compare/1.0.0...1.0.1)
 
 ### Add
 
@@ -264,21 +264,21 @@
 
 ### Merge
 
-* merge client & server into a single main
+* Merge branch 'master' of github.com:rightscale/wstunnel
+* Merge branch 'master' of github.com:rightscale/wstunnel
+* Merge branch 'master' of github.com:rightscale/wstunnel
 
 ### Merge
 
-* Merge branch 'master' of github.com:rightscale/wstunnel
-* Merge branch 'master' of github.com:rightscale/wstunnel
-* Merge branch 'master' of github.com:rightscale/wstunnel
-
-### More
-
-* More readme changes
+* merge client & server into a single main
 
 ### More
 
 * more debugging for wstuncli errors; inadvertant gofmt
+
+### More
+
+* More readme changes
 
 ### Remove
 
@@ -335,7 +335,7 @@
 
 ### Pull Requests
 
-* Merge pull request [#12](https://github.com/rightscale/wstunnel/issues/12) from rightscale/multihost
-* Merge pull request [#4](https://github.com/rightscale/wstunnel/issues/4) from rightscale/acu153476_use_syslog
-* Merge pull request [#2](https://github.com/rightscale/wstunnel/issues/2) from rightscale/acu152721_run_as_www_data_user
+* Merge pull request [#12](https://github.com/rshade/wstunnel/issues/12) from rightscale/multihost
+* Merge pull request [#4](https://github.com/rshade/wstunnel/issues/4) from rightscale/acu153476_use_syslog
+* Merge pull request [#2](https://github.com/rshade/wstunnel/issues/2) from rightscale/acu152721_run_as_www_data_user
 

@@ -40,7 +40,7 @@ TRAVIS_COMMIT?=$(shell git symbolic-ref HEAD | cut -d"/" -f 3)
 # This works around an issue between dep and Cygwin git by using Windows git instead.
 ifeq ($(shell go env GOHOSTOS),windows)
   ifeq ($(shell git version | grep windows),)
-    export PATH:=$(shell cygpath 'C:\Program Files\Git\cmd'):$(PATH)
+	export PATH:=$(shell cygpath 'C:\Program Files\Git\cmd'):$(PATH)
   endif
 endif
 
@@ -80,25 +80,25 @@ upload: depend
 	@which gof3r >/dev/null || (echo 'Please "go get github.com/rlmcpherson/s3gof3r/gof3r"'; false)
 	(cd build; set -ex; \
 	  for f in *.tgz; do \
-	    gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
-	    if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
-	      gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
-	      re='^([0-9]+\.[0-9]+)\.[0-9]+$$' ;\
-	      if [[ "$(TRAVIS_BRANCH)" =~ $$re ]]; then \
-	        gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
-	      fi; \
-	    fi; \
+		gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
+		if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
+		  gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
+		  re='^([0-9]+\.[0-9]+)\.[0-9]+$$' ;\
+		  if [[ "$(TRAVIS_BRANCH)" =~ $$re ]]; then \
+			gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
+		  fi; \
+		fi; \
 	  done)
 	(cd build; set -ex; \
 		for f in *.zip; do \
-	    gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
-	    if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
-	      gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
-	      re='^([0-9]+\.[0-9]+)\.[0-9]+$$' ;\
-	      if [[ "$(TRAVIS_BRANCH)" =~ $$re ]]; then \
-	        gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
-	      fi; \
-	    fi; \
+		gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
+		if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
+		  gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
+		  re='^([0-9]+\.[0-9]+)\.[0-9]+$$' ;\
+		  if [[ "$(TRAVIS_BRANCH)" =~ $$re ]]; then \
+			gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
+		  fi; \
+		fi; \
 	  done)
 
 # produce a version string that is embedded into the binary that captures the branch, the date
@@ -135,3 +135,30 @@ test: lint depend
 	$(GOPATH)/bin/ginkgo -r
 	$(GOPATH)/bin/ginkgo -r -cover
 	go tool cover -func=`basename $$PWD`.coverprofile
+
+# Changelog tools
+CHGLOG_VERSION=v0.15.4
+CHGLOG := $(shell which git-chglog)
+
+.PHONY: changelog-deps changelog-init changelog
+
+changelog-deps:
+	@if [ ! -x "$(CHGLOG)" ]; then \
+		echo "Installing git-chglog..." && \
+		go install github.com/git-chglog/git-chglog/cmd/git-chglog@$(CHGLOG_VERSION) && \
+		echo "git-chglog installed successfully"; \
+	fi
+
+changelog-init: changelog-deps
+	@if [ ! -f .chglog/config.yml ]; then \
+		git-chglog --init; \
+	else \
+		echo "Changelog config already exists in .chglog/"; \
+	fi
+
+changelog: changelog-deps
+	@echo "Generating changelog..."
+	@$(shell go env GOPATH)/bin/git-chglog -o CHANGELOG.md
+
+# Add changelog as dependency to release if it exists
+release: changelog
