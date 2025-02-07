@@ -27,12 +27,6 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
       
-      - name: Generate Changelog
-        run: |
-          go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
-          git-chglog --output CHANGELOG.md
-          echo "RELEASE_NOTE=$(cat CHANGELOG.md)" >> $GITHUB_ENV
-      
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -41,4 +35,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
