@@ -74,7 +74,8 @@ release:
     See [CHANGELOG.md](CHANGELOG.md) for all changes.
   footer: |
     **Full Changelog**: https://github.com/owner/repo/blob/main/CHANGELOG.md
-  notes_file: CHANGELOG.md
+  # Use note instead of notes_file
+  note: '{{ .Env.RELEASE_NOTE }}' # Will be populated from environment variable
 
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
