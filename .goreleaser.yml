@@ -47,6 +47,7 @@ checksum:
 
 changelog:
   sort: asc
+  use: github-native # or git
   filters:
     exclude:
       - '^docs:'
@@ -57,6 +58,11 @@ changelog:
 
 release:
   prerelease: auto
+  header: |
+    See [CHANGELOG.md](CHANGELOG.md) for all changes.
+  footer: |
+    **Full Changelog**: https://github.com/owner/repo/blob/main/CHANGELOG.md
+  notes_file: CHANGELOG.md
 
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
