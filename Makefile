@@ -140,7 +140,7 @@ test: lint depend
 CHGLOG_VERSION=v0.15.4
 CHGLOG := $(shell which git-chglog)
 
-.PHONY: changelog-deps changelog-init changelog
+.PHONY: changelog-deps changelog-init changelog changelog-next
 
 changelog-deps:
 	@if [ ! -x "$(CHGLOG)" ]; then \
@@ -159,6 +159,10 @@ changelog-init: changelog-deps
 changelog: changelog-deps
 	@echo "Generating changelog..."
 	@$(shell go env GOPATH)/bin/git-chglog -o CHANGELOG.md
+# make changelog-next VERSION=v1.0.0
+changelog-next:
+	@echo "Generating changelog for next release..."
+	@$(shell go env GOPATH)/bin/git-chglog --next-tag $(VERSION) -o CHANGELOG.md
 
 # Add changelog as dependency to release if it exists
 release: changelog
