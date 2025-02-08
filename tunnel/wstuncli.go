@@ -38,7 +38,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -116,7 +115,11 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		"comma separated list of client listening ports ex: -client-ports 8000..8100,8300..8400,8500,8505")
 	cliFlag.StringVar(&wstunCli.Cert, "certfile", "", "path for trusted certificate in PEM-encoded format")
 
-	cliFlag.Parse(args)
+	// Fix flag parsing
+	if err := cliFlag.Parse(args); err != nil {
+		wstunCli.Log.Crit("Failed to parse client flags", "err", err)
+		return nil
+	}
 
 	wstunCli.Log = makeLogger("WStuncli", *logf, "")
 	writePid(*pidf)
@@ -238,14 +241,14 @@ func (t *WSTunnelClient) Start() error {
 		t.Server = ""
 	} else if t.Server != "" {
 		if !strings.HasPrefix(t.Server, "http://") && !strings.HasPrefix(t.Server, "https://") {
-			return fmt.Errorf("Local server (-server option) must begin with http:// or https://")
+			return fmt.Errorf("local server (-server option) must begin with http:// or https://")
 		}
 		t.Server = strings.TrimSuffix(t.Server, "/")
 	}
 
 	// validate token and timeout
 	if t.Token == "" {
-		return fmt.Errorf("Must specify rendez-vous token using -token option")
+		return fmt.Errorf("must specify rendez-vous token using -token option")
 	}
 
 	tlsClientConfig := tls.Config{}
@@ -260,13 +263,13 @@ func (t *WSTunnelClient) Start() error {
 			rootCAs = x509.NewCertPool()
 		}
 		// Read in the cert file
-		certs, err := ioutil.ReadFile(t.Cert)
+		certs, err := os.ReadFile(t.Cert)
 		if err != nil {
-			return fmt.Errorf("Failed to read certificate file %q: %v", t.Cert, err)
+			return fmt.Errorf("failed to read certificate file %q: %v", t.Cert, err)
 		}
 		// Append our cert to the system pool
 		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-			return fmt.Errorf("Failed to appended certificate file %q to pool: %v", t.Cert, err)
+			return fmt.Errorf("failed to appended certificate file %q to pool: %v", t.Cert, err)
 		}
 		t.Log.Info("Explicitly accepting provided SSL certificate")
 		tlsClientConfig.RootCAs = rootCAs
@@ -282,7 +285,7 @@ func (t *WSTunnelClient) Start() error {
 	} else if t.Server != "" || t.Regexp != nil {
 		t.Log.Info("Dispatching to external server(s)", "server", t.Server, "regexp", t.Regexp)
 	} else {
-		return fmt.Errorf("Must specify internal server or server or regexp")
+		return fmt.Errorf("must specify internal server or server or regexp")
 	}
 
 	if t.Proxy != nil {
@@ -322,9 +325,13 @@ func (t *WSTunnelClient) Start() error {
 				if resp != nil {
 					extra = resp.Status
 					buf := make([]byte, 80)
-					resp.Body.Read(buf)
+					n, err := resp.Body.Read(buf)
+					if err != nil && err != io.EOF {
+						t.Log.Error("Failed to read response body", "err", err)
+						return
+					}
 					if len(buf) > 0 {
-						extra = extra + " -- " + string(buf)
+						extra = extra + " -- " + string(buf[:n])
 					}
 					resp.Body.Close()
 				}
@@ -376,7 +383,10 @@ func (t *WSTunnelClient) Stop() {
 func (wsc *WSConnection) handleRequests() {
 	go wsc.pinger()
 	for {
-		wsc.ws.SetReadDeadline(time.Time{}) // separate ping-pong routine does timeout
+		if err := wsc.ws.SetReadDeadline(time.Time{}); err != nil {
+			wsc.Log.Error("Failed to set read deadline", "err", err)
+			return
+		}
 		typ, r, err := wsc.ws.NextReader()
 		if err != nil {
 			wsc.Log.Info("WS   ReadMessage", "err", err.Error())
@@ -397,7 +407,7 @@ func (wsc *WSConnection) handleRequests() {
 		// SetReadLimit on the websocket. We have to do this because we want to handle
 		// the request in a goroutine (see "go finish..Request" calls below) and the
 		// websocket doesn't allow us to have multiple goroutines reading...
-		buf, err := ioutil.ReadAll(r)
+		buf, err := io.ReadAll(r)
 		if err != nil {
 			wsc.Log.Warn("WS   cannot read request message", "id", id, "err", err.Error())
 			break
@@ -446,7 +456,10 @@ func (wsc *WSConnection) pinger() {
 		if wsc.ws == nil {
 			return
 		}
-		wsc.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
+		if err := wsc.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second)); err != nil {
+			wsc.Log.Error("Failed to send close message", "err", err)
+			// Don't return error on close
+		}
 		wsc.Log.Info("ping timeout, closing WS")
 		time.Sleep(5 * time.Second)
 		if wsc.ws != nil {
@@ -459,10 +472,16 @@ func (wsc *WSConnection) pinger() {
 	ph := func(message string) error {
 		timer.Reset(tunTimeout)
 		if sf := wsc.tun.StatusFd; sf != nil {
-			sf.Seek(0, 0)
+			if _, err := sf.Seek(0, 0); err != nil {
+				wsc.Log.Error("Failed to seek file", "err", err)
+				return err
+			}
 			wsc.writeStatus()
 			pos, _ := sf.Seek(0, 1)
-			sf.Truncate(pos)
+			if err := sf.Truncate(pos); err != nil {
+				wsc.Log.Error("Failed to truncate file", "err", err)
+				return err
+			}
 		}
 		return nil
 	}
@@ -472,8 +491,7 @@ func (wsc *WSConnection) pinger() {
 		if wsc.ws == nil {
 			break
 		}
-		err := wsc.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(tunTimeout/3))
-		if err != nil {
+		if err := wsc.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(tunTimeout/3)); err != nil {
 			break
 		}
 		time.Sleep(tunTimeout / 3)
@@ -500,11 +518,11 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		}
 
 		conn, err = net.DialTCP(network, client, server)
-		if (conn != nil) && (err == nil) {
+		if err == nil {
 			return conn, nil
 		}
-		err = fmt.Errorf("WS: error connecting with local port %d: %s", port, err.Error())
-		t.Log.Info(err.Error())
+		t.Log.Info(fmt.Sprintf("WS: error connecting with local port %d: %s", port, err.Error()))
+		continue
 	}
 
 	err = errors.New("WS: Could not connect using any of the ports in range: " + fmt.Sprint(ports))
@@ -547,7 +565,10 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 	if pa != "" {
 		connectReq.Header.Set("Proxy-Authorization", pa)
 	}
-	connectReq.Write(conn)
+	if err := connectReq.Write(conn); err != nil {
+		t.Log.Error("Failed to write connect request", "err", err)
+		return nil, err
+	}
 
 	// Read and parse CONNECT response.
 	br := bufio.NewReader(conn)
@@ -611,7 +632,7 @@ func newResponseWriter(req *http.Request) *responseWriter {
 	buf := bytes.Buffer{}
 	resp := http.Response{
 		Header:        make(http.Header),
-		Body:          ioutil.NopCloser(&buf),
+		Body:          io.NopCloser(&buf),
 		StatusCode:    -1,
 		ContentLength: -1,
 		Proto:         req.Proto,
@@ -778,7 +799,10 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	wsWriterMutex.Lock()
 	defer wsWriterMutex.Unlock()
 	// Write response into the tunnel
-	wsc.ws.SetWriteDeadline(time.Time{}) // separate ping-pong routine does timeout
+	if err := wsc.ws.SetWriteDeadline(time.Time{}); err != nil {
+		wsc.Log.Error("Failed to set write deadline", "err", err)
+		return
+	}
 	w, err := wsc.ws.NextWriter(websocket.BinaryMessage)
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {
@@ -825,7 +849,7 @@ func concoctResponse(req *http.Request, message string, code int) *http.Response
 		Request:    req,
 	}
 	body := bytes.NewReader([]byte(message))
-	r.Body = ioutil.NopCloser(body)
+	r.Body = io.NopCloser(body)
 	r.ContentLength = int64(body.Len())
 	r.Header.Add("content-type", "text/plain")
 	r.Header.Add("date", time.Now().Format(time.RFC1123))
