@@ -1,39 +1,61 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
+    "config:recommended",
     "config:recommended",
     ":semanticCommits"
   ],
-  "golang": {
-    "enabled": true
-  },
   "postUpdateOptions": [
     "gomodTidy"
   ],
   "packageRules": [
     {
+      "matchCategories": [
+        "golang"
+      ],
+      "enabled": true
+    },
+    {
       "description": "Automerge non-major updates",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "automerge": true,
       "automergeType": "pr"
     },
     {
-      "matchManagers": ["gomod"],
-      "matchDepTypes": ["indirect"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
       "enabled": true
     },
     {
-      "matchManagers": ["gomod"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "all non-major go dependencies",
       "groupSlug": "go-minor-patch",
       "automerge": true
     },
     {
-      "matchManagers": ["gomod"],
-      "matchUpdateTypes": ["major"],
-      "labels": ["dependencies", "breaking"]
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "labels": [
+        "dependencies",
+        "breaking"
+      ]
     }
   ],
   "lockFileMaintenance": {
@@ -45,7 +67,9 @@
     "go": "1.23"
   },
   "ignoreDeps": [],
-  "schedule": ["before 5am"],
+  "schedule": [
+    "before 5am"
+  ],
   "semanticCommits": "enabled",
   "commitMessagePrefix": "chore(deps):",
   "prHourlyLimit": 5,
