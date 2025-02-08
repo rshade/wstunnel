@@ -91,7 +91,7 @@ var httpClient http.Client // client used for all requests, gets special transpo
 
 //===== Main =====
 
-//NewWSTunnelClient Creates a new WSTunnelClient from command line
+// NewWSTunnelClient Creates a new WSTunnelClient from command line
 func NewWSTunnelClient(args []string) *WSTunnelClient {
 	wstunCli := WSTunnelClient{}
 
@@ -150,13 +150,13 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		}
 
 		if tunnelUrl.Scheme != "ws" && tunnelUrl.Scheme != "wss" {
-			log15.Crit(fmt.Sprintf("Remote tunnel (-tunnel option) must begin with ws:// or wss://"))
+			log15.Crit("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
 			os.Exit(1)
 		}
 
 		wstunCli.Tunnel = tunnelUrl
 	} else {
-		log15.Crit(fmt.Sprintf("Must specify tunnel server ws://hostname:port using -tunnel option"))
+		log15.Crit("Must specify tunnel server ws://hostname:port using -tunnel option")
 		os.Exit(1)
 	}
 
@@ -229,7 +229,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	return &wstunCli
 }
 
-//Start creates the wstunnel connection.
+// Start creates the wstunnel connection.
 func (t *WSTunnelClient) Start() error {
 	t.Log.Info(VV)
 
@@ -363,7 +363,7 @@ func (t *WSTunnelClient) Start() error {
 	return nil
 }
 
-//Stop closes the wstunnel channel
+// Stop closes the wstunnel channel
 func (t *WSTunnelClient) Stop() {
 	t.exitChan <- struct{}{}
 	if t.conn != nil && t.conn.ws != nil {
@@ -511,7 +511,7 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 	return nil, err
 }
 
-//===== Proxy support =====
+// ===== Proxy support =====
 // Bits of this taken from golangs net/http/transport.go. Gorilla websocket lib
 // allows you to pass in a custom net.Dial function, which it will call instead
 // of net.Dial. net.Dial normally just opens up a tcp socket for you. We go one
@@ -562,7 +562,7 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 		//return nil, errors.New("proxy refused connection" + string(body))
 		f := strings.SplitN(resp.Status, " ", 2)
 		conn.Close()
-		return nil, fmt.Errorf(f[1])
+		return nil, fmt.Errorf("%s", f[1])
 	}
 	return conn, nil
 }
