@@ -45,7 +45,7 @@
     "go": "1.23"
   },
   "ignoreDeps": [],
-  "schedule": ["every day"],
+  "schedule": ["before 5am"],
   "semanticCommits": "enabled",
   "commitMessagePrefix": "chore(deps):",
   "prHourlyLimit": 5,
