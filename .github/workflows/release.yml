@@ -6,6 +6,8 @@ on:
     tags:
       - 'v*'
 
+permissions: {}  # Zero permissions by default
+
 jobs:
   go-build:
     uses: ./.github/workflows/go.yml
@@ -14,21 +16,23 @@ jobs:
     needs: go-build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # Required for creating releases
+      id-token: write # Required for signing
+      packages: write # Required for container publishing
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
       
-      - uses: actions/setup-go@v5.3.0
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
           go-version: '1.23'
           cache: true
           cache-dependency-path: go.sum
       
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@7ec5c2b0c6cdda6e8bbb49444bc797dd33d74dd8 # v5.0.0
         with:
           distribution: goreleaser
           version: latest
