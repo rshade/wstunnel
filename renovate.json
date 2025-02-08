@@ -8,7 +8,9 @@
     {
       "description": "Automerge non-major updates",
       "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
+      "automerge": true,
+      "autoapprove": true,
+      "automergeType": "pr"
     }
   ],
   "lockFileMaintenance": {
