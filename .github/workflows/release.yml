@@ -11,6 +11,9 @@ permissions: {}  # Zero permissions by default
 jobs:
   go-build:
     uses: ./.github/workflows/go.yml
+    permissions:
+      contents: read
+      pull-requests: read
 
   release:
     needs: go-build
