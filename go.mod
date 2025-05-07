@@ -2,7 +2,7 @@ module github.com/rshade/wstunnel
 
 go 1.24
 
-toolchain go1.24.2
+toolchain go1.24.3
 
 require (
 	github.com/go-stack/stack v1.8.1 // indirect
