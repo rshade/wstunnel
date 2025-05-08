@@ -31,4 +31,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/imdario/mergo => dario.cat/mergo v1.0.1
+replace github.com/imdario/mergo => dario.cat/mergo v1.0.2
