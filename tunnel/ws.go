@@ -19,7 +19,43 @@ import (
 
 func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
 	log.Info("HTTP Error", "token", token, "error", err, "code", code)
-	http.Error(w, html.EscapeString(err), code)
+	
+	// Use safeError to avoid superfluous WriteHeader warnings
+	safeError(w, html.EscapeString(err), code)
+}
+
+// safeResponseWriter is a custom ResponseWriter that prevents multiple WriteHeader calls
+type safeResponseWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (w *safeResponseWriter) WriteHeader(statusCode int) {
+	if !w.wroteHeader {
+		w.ResponseWriter.WriteHeader(statusCode)
+		w.wroteHeader = true
+	}
+}
+
+func (w *safeResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// safeError is a safer replacement for http.Error that sets headers before WriteHeader
+func safeError(w http.ResponseWriter, error string, code int) {
+	// Wrap the response writer if it's not already wrapped
+	safeW, ok := w.(*safeResponseWriter)
+	if !ok {
+		safeW = &safeResponseWriter{ResponseWriter: w}
+	}
+	
+	safeW.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	safeW.Header().Set("X-Content-Type-Options", "nosniff")
+	safeW.WriteHeader(code)
+	_, _ = safeW.Write([]byte(error))
 }
 
 // websocket error constants

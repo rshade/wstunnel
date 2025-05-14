@@ -80,21 +80,21 @@ var _ = Describe("Testing token request timeout", func() {
 		client := &http.Client{
 			Timeout: 10 * time.Second, // Client timeout longer than server timeout
 		}
-		
+
 		start := time.Now()
 		resp, err := client.Get(wstunURL + "/_token/" + wstunToken + "/delayed")
 		elapsed := time.Since(start)
-		
+
 		// Expect no error in making the request
 		Ω(err).ShouldNot(HaveOccurred())
-		
+
 		// The request should complete within our timeout window (with some margin)
 		// We set the timeout to 2 seconds, so it should complete in less than 4 seconds
 		Ω(elapsed).Should(BeNumerically("<", 4*time.Second))
-		
+
 		// Response should be a timeout error (504)
 		Ω(resp.StatusCode).Should(Equal(504))
-		
+
 		respBody, err := io.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
 		Ω(string(respBody)).Should(Or(

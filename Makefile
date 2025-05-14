@@ -30,7 +30,7 @@ EXE:=$(NAME)$(shell go env GOEXE)
 BUCKET=rightscale-binaries
 ACL=public-read
 # dependencies not vendored because used by build & test process
-DEPEND=golang.org/x/tools/cmd/cover github.com/rlmcpherson/s3gof3r/gof3r github.com/onsi/ginkgo/ginkgo github.com/git-chglog/git-chglog/cmd/git-chglog
+DEPEND=golang.org/x/tools/cmd/cover github.com/rlmcpherson/s3gof3r/gof3r github.com/git-chglog/git-chglog/cmd/git-chglog
 HASDEP := $(shell dep version 2> /dev/null)
 
 TRAVIS_BRANCH?=dev
@@ -124,17 +124,21 @@ lint:
 	  echo "^- Repo contains improperly formatted go files; run gofmt -w *.go" && exit 1; \
 	  else echo "All .go files formatted correctly"; fi
 	go vet ./...
+	@if command -v golangci-lint > /dev/null; then \
+	  echo "Running golangci-lint..." && \
+	  golangci-lint run; \
+	else \
+	  echo "golangci-lint not found, skipping"; \
+	fi
 
 travis-test: lint
-	$(GOPATH)/bin/ginkgo -r -cover
+	go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
-# running ginkgo twice, sadly, the problem is that -cover modifies the source code with the effect
-# that if there are errors the output of gingko refers to incorrect line numbers
-# tip: if you don't like colors use ginkgo -r -noColor
+# running tests with coverage
 test: lint depend
-	$(GOPATH)/bin/ginkgo -r
-	$(GOPATH)/bin/ginkgo -r -cover
-	go tool cover -func=`basename $$PWD`.coverprofile
+	go test -v ./...
+	go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+	go tool cover -func=coverage.txt
 
 # Changelog tools
 CHGLOG_VERSION=v0.15.4
