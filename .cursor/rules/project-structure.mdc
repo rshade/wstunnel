@@ -1,0 +1,16 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Structure Guide
+
+This project is organized as follows:
+
+- The main entry point is [main.go](mdc:main.go).
+- Core tunnel functionality is implemented in the [tunnel/](mdc:tunnel) directory, with the main client and server logic in [wstuncli.go](mdc:tunnel/wstuncli.go) and [wstunsrv.go](mdc:tunnel/wstunsrv.go).
+- The [whois/](mdc:whois) directory contains WHOIS-related utilities, including [robowhois.go](mdc:whois/robowhois.go).
+- The [init/](mdc:init) directory contains configuration and init scripts for tunnel components.
+- Project configuration and dependencies are managed in [go.mod](mdc:go.mod) and [go.sum](mdc:go.sum).
+- Build and release configuration is in [Makefile](mdc:Makefile) and [.goreleaser.yml](mdc:.goreleaser.yml).
+- See [README.md](mdc:README.md) for an overview and usage instructions.

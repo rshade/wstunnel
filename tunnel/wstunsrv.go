@@ -408,6 +408,15 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
 		"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
 
+	// Calculate timeout based on request deadline
+	timeoutRemaining := time.Until(req.deadline)
+	if timeoutRemaining <= 0 {
+		// Already past deadline
+		req.log.Info("HTTP RET", "status", "504", "err", "Request deadline already expired")
+		http.Error(w, "Request deadline already expired", http.StatusGatewayTimeout)
+		return
+	}
+
 	// wait for response
 	select {
 	case resp := <-req.replyChan:
@@ -427,7 +436,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
 			retry = true
 		}
-	case <-time.After(t.HTTPTimeout):
+	case <-time.After(timeoutRemaining):
 		// it timed out...
 		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 		http.Error(w, "Tunnel timeout", http.StatusGatewayTimeout)
