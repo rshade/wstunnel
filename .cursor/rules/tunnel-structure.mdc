@@ -1,0 +1,15 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Tunnel Directory Guide
+
+The [tunnel/](mdc:tunnel) directory contains the core logic for the tunnel client and server:
+
+- [wstuncli.go](mdc:tunnel/wstuncli.go): Implements the tunnel client logic.
+- [wstunsrv.go](mdc:tunnel/wstunsrv.go): Implements the tunnel server logic.
+- [ws.go](mdc:tunnel/ws.go): WebSocket-related utilities and helpers.
+- [helpers.go](mdc:tunnel/helpers.go): Miscellaneous helper functions used by the tunnel components.
+- [log.go](mdc:tunnel/log.go) and [log_windows.go](mdc:tunnel/log_windows.go): Logging utilities for different platforms.
+- Test files (e.g., [basic_test.go](mdc:tunnel/basic_test.go), [misc_test.go](mdc:tunnel/misc_test.go)) provide unit and integration tests for tunnel functionality.

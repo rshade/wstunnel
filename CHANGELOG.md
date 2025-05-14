@@ -1,5 +1,11 @@
 # ChangeLog
 
+## [Unreleased]
+
+### Fix
+
+* Fix timeout of requests to _token endpoint (#3)
+
 ## [v1.1.0](https://github.com/rshade/wstunnel/compare/1.0.7...v1.1.0)
 
 ### Add

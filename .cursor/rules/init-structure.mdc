@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Init Directory Guide
+
+The [init/](mdc:init) directory contains configuration and initialization scripts for the tunnel components:
+
+- [wstunsrv.conf](mdc:init/wstunsrv.conf): Configuration for the tunnel server.
+- [wstuncli.init](mdc:init/wstuncli.init): Init script for the tunnel client.
+- [wstuncli.conf](mdc:init/wstuncli.conf): Configuration for the tunnel client.
+- [wstuncli.default](mdc:init/wstuncli.default): Default environment variables for the tunnel client.

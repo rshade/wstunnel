@@ -36,3 +36,7 @@ version.go
 vendor/
 build/
 .vscode/
+
+**/.claude/settings.local.json
+PR_MESSAGE.md
+TEST-INSTRUCTIONS.md

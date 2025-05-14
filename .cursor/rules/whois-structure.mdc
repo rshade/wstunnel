@@ -1,0 +1,11 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Whois Directory Guide
+
+The [whois/](mdc:whois) directory contains utilities for WHOIS lookups and related functionality:
+
+- [robowhois.go](mdc:whois/robowhois.go): Implements automated WHOIS queries.
+- [whois.go-](mdc:whois/whois.go-): Contains additional WHOIS-related logic.
