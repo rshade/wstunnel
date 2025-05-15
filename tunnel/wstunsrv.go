@@ -224,13 +224,19 @@ func (t *WSTunnelServer) Stop() {
 
 // Handler for health check
 func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
-	if _, err := fmt.Fprintln(w, "WSTUNSRV RUNNING"); err != nil {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
+	if _, err := fmt.Fprintln(safeW, "WSTUNSRV RUNNING"); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
 }
 
 // Handler for stats
 func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
 	// let's start by doing a GC to ensure we reclaim file descriptors (?)
 	runtime.GC()
 
@@ -241,7 +247,7 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		rss = append(rss, rs)
 	}
 	// print out the number of tunnels
-	if _, err := fmt.Fprintf(w, "tunnels=%d\n", len(t.serverRegistry)); err != nil {
+	if _, err := fmt.Fprintf(safeW, "tunnels=%d\n", len(t.serverRegistry)); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
 	t.serverRegistryMutex.Unlock()
@@ -252,7 +258,7 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		addr = r.RemoteAddr
 	}
 	if !strings.HasPrefix(addr, "127.0.0.1") {
-		if _, err := fmt.Fprintln(w, "More stats available when called from localhost..."); err != nil {
+		if _, err := fmt.Fprintln(safeW, "More stats available when called from localhost..."); err != nil {
 			t.Log.Error("Failed to write response", "err", err)
 		}
 		return
@@ -261,33 +267,33 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	reqPending := 0
 	badTunnels := 0
 	for i, rs := range rss {
-		if _, err := fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, cutToken(rs.token)); err != nil {
+		if _, err := fmt.Fprintf(safeW, "\ntunnel%02d_token=%s\n", i, cutToken(rs.token)); err != nil {
 			rs.log.Error("Failed to write response", "err", err)
 		}
-		if _, err := fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(rs.requestSet)); err != nil {
+		if _, err := fmt.Fprintf(safeW, "tunnel%02d_req_pending=%d\n", i, len(rs.requestSet)); err != nil {
 			rs.log.Error("Failed to write response", "err", err)
 		}
 		reqPending += len(rs.requestSet)
-		if _, err := fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, rs.remoteAddr); err != nil {
+		if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_addr=%s\n", i, rs.remoteAddr); err != nil {
 			rs.log.Error("Failed to write response", "err", err)
 		}
 		if rs.remoteName != "" {
-			if _, err := fmt.Fprintf(w, "tunnel%02d_tun_dns=%s\n", i, rs.remoteName); err != nil {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_dns=%s\n", i, rs.remoteName); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 		}
 		if rs.remoteWhois != "" {
-			if _, err := fmt.Fprintf(w, "tunnel%02d_tun_whois=%s\n", i, rs.remoteWhois); err != nil {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_whois=%s\n", i, rs.remoteWhois); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 		}
 		if rs.lastActivity.IsZero() {
-			if _, err := fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i); err != nil {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_idle_secs=NaN\n", i); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 			badTunnels++
 		} else {
-			if _, err := fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i, time.Since(rs.lastActivity).Seconds()); err != nil {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_idle_secs=%.1f\n", i, time.Since(rs.lastActivity).Seconds()); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 			if time.Since(rs.lastActivity).Seconds() > 60 {
@@ -297,20 +303,20 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		if len(rs.requestSet) > 0 {
 			rs.requestSetMutex.Lock()
 			if r, ok := rs.requestSet[rs.lastID]; ok {
-				if _, err := fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr); err != nil {
+				if _, err := fmt.Fprintf(safeW, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr); err != nil {
 					rs.log.Error("Failed to write response", "err", err)
 				}
 			}
 			rs.requestSetMutex.Unlock()
 		}
 	}
-	if _, err := fmt.Fprintln(w, ""); err != nil {
+	if _, err := fmt.Fprintln(safeW, ""); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
-	if _, err := fmt.Fprintf(w, "req_pending=%d\n", reqPending); err != nil {
+	if _, err := fmt.Fprintf(safeW, "req_pending=%d\n", reqPending); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
-	if _, err := fmt.Fprintf(w, "dead_tunnels=%d\n", badTunnels); err != nil {
+	if _, err := fmt.Fprintf(safeW, "dead_tunnels=%d\n", badTunnels); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
 }
@@ -318,13 +324,16 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 // payloadHeaderHandler handles payload requests with the tunnel token in the Host header.
 // Payload requests are requests that are to be forwarded through the tunnel.
 func payloadHeaderHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
 	tok := r.Header.Get("X-Token")
 	if tok == "" {
 		t.Log.Info("HTTP Missing X-Token header", "req", r)
-		http.Error(w, "Missing X-Token header", 400)
+		safeError(safeW, "Missing X-Token header", 400)
 		return
 	}
-	payloadHandler(t, w, r, token(tok))
+	payloadHandler(t, safeW, r, token(tok))
 }
 
 // Regexp for extracting the tunnel token from the URI
@@ -333,19 +342,25 @@ var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 // payloadPrefixHandler handles payload requests with the tunnel token in a URI prefix.
 // Payload requests are requests that are to be forwarded through the tunnel.
 func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
 	reqURL := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqURL)
 	if len(m) != 3 {
 		t.Log.Info("HTTP Missing token or URI", "url", reqURL)
-		http.Error(w, "Missing token in URI", 400)
+		safeError(safeW, "Missing token in URI", 400)
 		return
 	}
 	r.URL, _ = url.Parse(m[2])
-	payloadHandler(t, w, r, token(m[1]))
+	payloadHandler(t, safeW, r, token(m[1]))
 }
 
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
 	// create the request object
 	req := makeRequest(r, t.HTTPTimeout)
 	req.log = t.Log.New("token", cutToken(tok))
@@ -359,7 +374,7 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 
 	// repeatedly try to get a response
 	for tries := 1; tries <= 3; tries++ {
-		retry := getResponse(t, req, w, r, tok, tries)
+		retry := getResponse(t, req, safeW, r, tok, tries)
 		if !retry {
 			return
 		}
@@ -378,7 +393,11 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	if rs == nil {
 		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "404",
 			"err", "Tunnel not found")
-		http.Error(w, "Tunnel not found (or not seen in a long time)", 404)
+		// Set headers before calling WriteHeader to avoid superfluous warning
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte("Tunnel not found (or not seen in a long time)"))
 		return
 	}
 
@@ -398,7 +417,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	if err != nil {
 		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "504",
 			"err", err.Error())
-		http.Error(w, err.Error(), http.StatusGatewayTimeout)
+		safeError(w, err.Error(), http.StatusGatewayTimeout)
 		return
 	}
 	try := ""
@@ -413,7 +432,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	if timeoutRemaining <= 0 {
 		// Already past deadline
 		req.log.Info("HTTP RET", "status", "504", "err", "Request deadline already expired")
-		http.Error(w, "Request deadline already expired", http.StatusGatewayTimeout)
+		safeError(w, "Request deadline already expired", http.StatusGatewayTimeout)
 		return
 	}
 
@@ -430,7 +449,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 		if resp.err != ErrRetry {
 			req.log.Info("HTTP RET",
 				"status", "504", "err", resp.err.Error())
-			http.Error(w, resp.err.Error(), http.StatusGatewayTimeout)
+			safeError(w, resp.err.Error(), http.StatusGatewayTimeout)
 		} else {
 			// else we're gonna retry
 			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
@@ -439,17 +458,20 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	case <-time.After(timeoutRemaining):
 		// it timed out...
 		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
-		http.Error(w, "Tunnel timeout", http.StatusGatewayTimeout)
+		safeError(w, "Tunnel timeout", http.StatusGatewayTimeout)
 	}
 	return
 }
 
 // tunnelHandler handles tunnel establishment requests
 func tunnelHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	// Wrap the response writer with our safe wrapper
+	safeW := &safeResponseWriter{ResponseWriter: w}
+	
 	if r.Method == "GET" {
-		wsHandler(t, w, r)
+		wsHandler(t, safeW, r)
 	} else {
-		http.Error(w, "Only GET requests are supported", 400)
+		safeError(safeW, "Only GET requests are supported", 400)
 	}
 }
 
@@ -466,18 +488,27 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 
 	// lookup and return existing remote server
 	rs, ok := t.serverRegistry[tok]
-	if ok || !create { // return null if create flag is not set
+	if ok {
+		t.Log.Debug("WS tunnel exists", "token", cutToken(tok))
 		return rs
 	}
+	
+	if !create { // return null if create flag is not set
+		t.Log.Info("WS tunnel not found", "token", cutToken(tok))
+		return nil
+	}
+	
 	// construct new remote server
 	rs = &remoteServer{
 		token:        tok,
+		lastActivity: time.Now(),
 		requestQueue: make(chan *remoteRequest, maxReq),
 		requestSet:   make(map[int16]*remoteRequest),
-		log:          log15.New("token", cutToken(tok)),
+		log:          t.Log.New("token", cutToken(tok)),
 	}
 	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
+	t.Log.Info("WS new tunnel created", "token", cutToken(tok))
 	return rs
 }
 
@@ -550,19 +581,28 @@ var censoredHeaders = []string{
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
 func writeResponse(w http.ResponseWriter, r io.Reader) int {
+	// Ensure we're using our safe response writer
+	safeW, ok := w.(*safeResponseWriter)
+	if !ok {
+		safeW = &safeResponseWriter{ResponseWriter: w}
+	}
+	
 	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)
-		w.WriteHeader(506)
+		// Set headers before calling WriteHeader to avoid superfluous warning
+		safeW.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		safeW.Header().Set("X-Content-Type-Options", "nosniff")
+		safeW.WriteHeader(506)
 		return 506
 	}
 	for _, h := range censoredHeaders {
 		resp.Header.Del(h)
 	}
 	// write the response
-	copyHeader(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	copyHeader(safeW.Header(), resp.Header)
+	safeW.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(safeW, resp.Body); err != nil {
 		log15.Error("Error copying response body", "err", err)
 	}
 	if err := resp.Body.Close(); err != nil {

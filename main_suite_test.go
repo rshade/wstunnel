@@ -3,19 +3,16 @@
 package main
 
 import (
+	"os"
 	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rshade/wstunnel/testutil"
 )
 
-func TestWstunnel(t *testing.T) {
-	// buffer up log messages in ginkgo and only output on error
-	log15.Root().SetHandler(log15.StreamHandler(GinkgoWriter, log15.TerminalFormat()))
+func TestMain(m *testing.M) {
+	// Run tests with shared setup
+	exitCode := testutil.RunTests(m)
 
-	format.UseStringerRepresentation = true
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "WSTUNNEL")
+	// Exit with the same code
+	os.Exit(exitCode)
 }
