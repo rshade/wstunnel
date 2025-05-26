@@ -60,6 +60,7 @@ import (
 // websockets that are not fully closed yet running at any point in time
 type WSTunnelClient struct {
 	Token          string         // Rendez-vous token
+	Password       string         // Optional password for token authentication
 	Tunnel         *url.URL       // websocket server to connect to (ws[s]://hostname:port)
 	Server         string         // local HTTP(S) server to send received requests to (default server)
 	InternalServer http.Handler   // internal Server to dispatch HTTP requests to
@@ -71,9 +72,11 @@ type WSTunnelClient struct {
 	Log            log15.Logger   // logger with "pkg=WStuncli"
 	StatusFd       *os.File       // output periodic tunnel status information
 	Connected      bool           // true when we have an active connection to wstunsrv
+	connMutex      sync.RWMutex   // protects Connected field
 	exitChan       chan struct{}  // channel to tell the tunnel goroutines to end
 	conn           *WSConnection
-	ClientPorts    []int // array of ports for client to listen on.
+	ClientPorts    []int              // array of ports for client to listen on.
+	connManager    *ConnectionManager // connection manager for retry logic
 	//ws             *websocket.Conn // websocket connection
 }
 
@@ -86,6 +89,20 @@ type WSConnection struct {
 
 var httpClient http.Client // client used for all requests, gets special transport for -insecure
 
+// IsConnected returns true if the client has an active connection to wstunsrv
+func (t *WSTunnelClient) IsConnected() bool {
+	t.connMutex.RLock()
+	defer t.connMutex.RUnlock()
+	return t.Connected
+}
+
+// setConnected sets the connection status
+func (t *WSTunnelClient) setConnected(connected bool) {
+	t.connMutex.Lock()
+	defer t.connMutex.Unlock()
+	t.Connected = connected
+}
+
 //===== Main =====
 
 // NewWSTunnelClient Creates a new WSTunnelClient from command line
@@ -93,8 +110,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	wstunCli := WSTunnelClient{}
 
 	var cliFlag = flag.NewFlagSet("client", flag.ExitOnError)
-	cliFlag.StringVar(&wstunCli.Token, "token", "",
-		"rendez-vous token identifying this server")
+	var tokenArg = cliFlag.String("token", "",
+		"rendez-vous token identifying this server (format: token or token:password)")
 	var tunnel = cliFlag.String("tunnel", "",
 		"websocket server ws[s]://user:pass@hostname:port to connect to")
 	cliFlag.StringVar(&wstunCli.Server, "server", "",
@@ -120,8 +137,19 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	}
 
 	wstunCli.Log = makeLogger("WStuncli", *logf, "")
-	writePid(*pidf)
+	if err := writePid(*pidf); err != nil {
+		wstunCli.Log.Error("Failed to write pidfile", "err", err)
+	}
 	wstunCli.Timeout = calcWsTimeout(*tout)
+
+	// Parse token:password format
+	if *tokenArg != "" {
+		parts := strings.SplitN(*tokenArg, ":", 2)
+		wstunCli.Token = strings.TrimSpace(parts[0])
+		if len(parts) == 2 {
+			wstunCli.Password = strings.TrimSpace(parts[1])
+		}
+	}
 
 	// process -statusfile
 	if *statf != "" {
@@ -311,8 +339,25 @@ func (t *WSTunnelClient) Start() error {
 			}
 			h := make(http.Header)
 			h.Add("Origin", t.Token)
+			// Add Authorization header for token password if provided
+			if t.Password != "" {
+				credentials := t.Token + ":" + t.Password
+				encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+				h.Add("Authorization", "Basic "+encoded)
+			}
+
+			// Also add tunnel URL-based auth if present (supports dual authentication)
 			if auth := proxyAuth(t.Tunnel); auth != "" {
-				h.Add("Authorization", auth)
+				// If we already have token auth, this becomes secondary auth
+				// Some servers may use both for different purposes
+				if t.Password == "" {
+					// No token password, so this is primary auth
+					h.Add("Authorization", auth)
+				} else {
+					// We already have Authorization header for token auth
+					// Add URL auth as a custom header that server can check if needed
+					h.Add("X-Tunnel-Authorization", auth)
+				}
 			}
 			url := fmt.Sprintf("%s://%s/_tunnel", t.Tunnel.Scheme, t.Tunnel.Host)
 			timer := time.NewTimer(10 * time.Second)
@@ -348,9 +393,9 @@ func (t *WSTunnelClient) Start() error {
 					srv = "<internal>"
 				}
 				t.conn.Log.Info("WS   ready", "server", srv)
-				t.Connected = true
+				t.setConnected(true)
 				t.conn.handleRequests()
-				t.Connected = false
+				t.setConnected(false)
 			}
 			// check whether we need to exit
 			exitLoop := false
@@ -879,5 +924,6 @@ func concoctResponse(req *http.Request, message string, code int) *http.Response
 	r.Header.Add("content-type", "text/plain")
 	r.Header.Add("date", time.Now().Format(time.RFC1123))
 	r.Header.Add("server", "wstunnel")
+	r.Header.Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
 	return &r
 }

@@ -115,7 +115,7 @@ func (ts *TestServer) startClient() *WSTunnelClient {
 		"-server", ts.server.URL,
 		"-timeout", "30",
 	})
-	
+
 	if err := ts.wstuncli.Start(); err != nil {
 		log15.Error("Error starting client", "error", err)
 		os.Exit(1)
@@ -139,13 +139,13 @@ func (ts *TestServer) waitConnected() {
 			log15.Warn("Connection wait timeout reached")
 			return
 		case <-ticker.C:
-			if ts.wstuncli != nil && ts.wstuncli.Connected {
+			if ts.wstuncli != nil && ts.wstuncli.IsConnected() {
 				log15.Info("Client connected successfully")
 				success = true
 			}
 		}
 	}
-	
+
 	// Add a small delay to ensure connection is fully established
 	time.Sleep(200 * time.Millisecond)
 }
@@ -154,7 +154,7 @@ func (ts *TestServer) waitConnected() {
 func NewTestServer() *TestServer {
 	ts := &TestServer{}
 	ts.wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
-	
+
 	// Create a real HTTP server with a simple handler
 	mux := http.NewServeMux()
 	// Add a default handler that will be overridden by specific tests
@@ -177,7 +177,7 @@ func NewTestServer() *TestServer {
 
 	// Wait a moment for the server to fully initialize
 	time.Sleep(100 * time.Millisecond)
-	
+
 	return ts
 }
 
@@ -202,85 +202,85 @@ func TestBasicRequests(t *testing.T) {
 	// Skip this test for now during the migration from Ginkgo to standard Go tests
 	// This test has issues with WebSocket handshake that need further investigation
 	t.Skip("Skipping test during migration from Ginkgo to standard Go tests")
-	
+
 	// Original test implementation commented out
 	/*
-	// Enable verbose logging for this test
-	log15.Root().SetHandler(log15.LvlFilterHandler(log15.LvlDebug, log15.StdoutHandler))
+			// Enable verbose logging for this test
+			log15.Root().SetHandler(log15.LvlFilterHandler(log15.LvlDebug, log15.StdoutHandler))
 
-	// Use the simpler method from the existing TestNonExistingTunnels test
-	// which is passing successfully
-	wstunToken := "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
-	
-	// Create our target HTTP server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log15.Info("Target server request", "path", r.URL.Path)
-		if r.URL.Path == "/hello" {
-			log15.Info("Hello handler called", "path", r.URL.Path)
-			w.Header().Set("Content-Type", "text/world")
-			w.WriteHeader(200)
-			_, _ = w.Write([]byte("WORLD"))
-		} else {
-			log15.Info("Other path request", "path", r.URL.Path)
-			w.WriteHeader(200)
-		}
-	}))
-	defer server.Close()
+			// Use the simpler method from the existing TestNonExistingTunnels test
+			// which is passing successfully
+			wstunToken := "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 
-	// Create the tunnel server
-	listener, _ := net.Listen("tcp", "127.0.0.1:0")
-	serverAddr := listener.Addr().String()
-	wstunsrv := NewWSTunnelServer([]string{})
-	wstunsrv.Start(listener)
-	defer wstunsrv.Stop()
+			// Create our target HTTP server
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				log15.Info("Target server request", "path", r.URL.Path)
+				if r.URL.Path == "/hello" {
+					log15.Info("Hello handler called", "path", r.URL.Path)
+					w.Header().Set("Content-Type", "text/world")
+					w.WriteHeader(200)
+					_, _ = w.Write([]byte("WORLD"))
+				} else {
+					log15.Info("Other path request", "path", r.URL.Path)
+					w.WriteHeader(200)
+				}
+			}))
+			defer server.Close()
 
-	// Create the tunnel client pointing to our server
-	wstuncli := NewWSTunnelClient([]string{
-		"-token", wstunToken,
-		"-tunnel", "ws://" + serverAddr,
-		"-server", server.URL,
-		"-timeout", "30",
-	})
-	
-	if err := wstuncli.Start(); err != nil {
-		t.Fatalf("Error starting client: %v", err)
-	}
-	defer wstuncli.Stop()
+			// Create the tunnel server
+			listener, _ := net.Listen("tcp", "127.0.0.1:0")
+			serverAddr := listener.Addr().String()
+			wstunsrv := NewWSTunnelServer([]string{})
+			wstunsrv.Start(listener)
+			defer wstunsrv.Stop()
 
-	// Wait for client to connect with timeout
-	timeout := time.After(5 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+			// Create the tunnel client pointing to our server
+			wstuncli := NewWSTunnelClient([]string{
+				"-token", wstunToken,
+				"-tunnel", "ws://" + serverAddr,
+				"-server", server.URL,
+				"-timeout", "30",
+			})
 
-	connected := false
-waitLoop:
-	for {
-		select {
-		case <-timeout:
-			// If we time out, fail the test
-			t.Fatalf("Client failed to connect within timeout")
-			break waitLoop
-		case <-ticker.C:
-			if wstuncli.Connected {
-				connected = true
-				break waitLoop
+			if err := wstuncli.Start(); err != nil {
+				t.Fatalf("Error starting client: %v", err)
 			}
-		}
-	}
-	
-	if !connected {
-		t.Fatalf("Client failed to connect within timeout")
-	}
-	
-	log15.Info("Client connected successfully", "token", wstunToken)
-	// Let everything settle for a moment
-	time.Sleep(500 * time.Millisecond)
+			defer wstuncli.Stop()
 
-	// Test the hello request
-	wstunURL := "http://" + serverAddr
-	resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
+			// Wait for client to connect with timeout
+			timeout := time.After(5 * time.Second)
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+
+			connected := false
+		waitLoop:
+			for {
+				select {
+				case <-timeout:
+					// If we time out, fail the test
+					t.Fatalf("Client failed to connect within timeout")
+					break waitLoop
+				case <-ticker.C:
+					if wstuncli.IsConnected() {
+						connected = true
+						break waitLoop
+					}
+				}
+			}
+
+			if !connected {
+				t.Fatalf("Client failed to connect within timeout")
+			}
+
+			log15.Info("Client connected successfully", "token", wstunToken)
+			// Let everything settle for a moment
+			time.Sleep(500 * time.Millisecond)
+
+			// Test the hello request
+			wstunURL := "http://" + serverAddr
+			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 	*/
-	
+
 	// Use a placeholder passing test for now
 	resp, err := http.Get("http://example.com")
 	if err != nil {
@@ -391,14 +391,14 @@ func TestLargeResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading response: %v", err)
 	}
-	
+
 	// Initialize expected response data
 	respSize := 12 * 1024 * 1024 // 12MB
 	respData := make([]byte, respSize)
 	for i := range respData {
 		respData[i] = byte(i % 256)
 	}
-	
+
 	if !bytes.Equal(respBody, respData) {
 		t.Errorf("Response body does not match expected data")
 	}

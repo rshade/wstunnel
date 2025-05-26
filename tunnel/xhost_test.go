@@ -74,7 +74,7 @@ waitLoop:
 			// If we time out, just continue - the test will fail if needed
 			break waitLoop
 		case <-ticker.C:
-			if wstuncli.Connected {
+			if wstuncli.IsConnected() {
 				break waitLoop
 			}
 		}
@@ -150,7 +150,7 @@ waitLoop:
 			// If we time out, just continue - the test will fail if needed
 			break waitLoop
 		case <-ticker.C:
-			if wstuncli.Connected {
+			if wstuncli.IsConnected() {
 				break waitLoop
 			}
 		}
@@ -228,7 +228,7 @@ waitLoop:
 			// If we time out, just continue - the test will fail if needed
 			break waitLoop
 		case <-ticker.C:
-			if wstuncli.Connected {
+			if wstuncli.IsConnected() {
 				break waitLoop
 			}
 		}

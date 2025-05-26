@@ -19,24 +19,24 @@ var VV string
 // SetVV Used for versioning build
 func SetVV(vv string) { VV = vv }
 
-func writePid(file string) {
+func writePid(file string) error {
 	if file != "" {
 		_ = os.Remove(file)
 		pid := os.Getpid()
 		f, err := os.Create(file)
 		if err != nil {
-			log15.Crit("Can't create pidfile", "file", file, "err", err.Error())
-			os.Exit(1)
+			return fmt.Errorf("can't create pidfile %s: %v", file, err)
 		}
 		_, err = f.WriteString(strconv.Itoa(pid) + "\n")
 		if err != nil {
-			log15.Crit("Can't write to pidfile", "file", file, "err", err.Error())
-			os.Exit(1)
+			_ = f.Close()
+			return fmt.Errorf("can't write to pidfile %s: %v", file, err)
 		}
 		if err := f.Close(); err != nil {
-			log15.Error("Failed to close pidfile", "err", err)
+			return fmt.Errorf("failed to close pidfile: %v", err)
 		}
 	}
+	return nil
 }
 
 const simpleTimeFormat = "2006-01-02 15:04:05"
