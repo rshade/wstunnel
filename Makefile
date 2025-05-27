@@ -3,7 +3,7 @@
 # Makefile for Golang projects, v0.9.0
 #
 # Features:
-# - runs ginkgo tests recursively, computes code coverage report
+# - runs go tests recursively, computes code coverage report
 # - code coverage ready for travis-ci to upload and produce badges for README.md
 # - build for linux/amd64, linux/arm, darwin/amd64, windows/amd64
 # - just 'make' builds for local OS/arch

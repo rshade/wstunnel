@@ -3,11 +3,11 @@
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/rshade/wstunnel?utm_source=oss&utm_medium=github&utm_campaign=rshade%2Fwstunnel&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 - Master:
-[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
-[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
-- 1.0.7:
-[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.7)](https://travis-ci.org/rightscale/wstunnel)
-[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.7.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+[![Build Status](https://github.com/rshade/wstunnel/actions/workflows/go.yml/badge.svg?branch=master)](https://github.com/rshade/wstunnel/actions/workflows/go.yml)
+[![Coverage](https://codecov.io/gh/rshade/wstunnel/branch/master/graph/badge.svg)](https://app.codecov.io/gh/rshade/wstunnel)
+- 1.1.1:
+[![Build Status](https://github.com/rshade/wstunnel/actions/workflows/go.yml/badge.svg?branch=1.1.1)](https://github.com/rshade/wstunnel/actions/workflows/go.yml)
+[![Coverage](https://codecov.io/gh/rshade/wstunnel/branch/1.1.1/graph/badge.svg)](https://app.codecov.io/gh/rshade/wstunnel)
 
 WStunnel creates an HTTPS tunnel that can connect servers sitting
 behind an HTTP proxy and firewall to clients on the internet. It differs from many other projects
@@ -156,6 +156,10 @@ $ curl 'https://wstun.example.com:8080/_token/my_b!g_$secret!!/some/web/page'
 $ curl '-HX-Token:my_b!g_$secret!!' https://wstun.example.com:8080/some/web/page
 <html> .......
 ```
+
+### Running on Android
+
+WStunnel can be run on Android devices using terminal emulators like Termux. See the [Android documentation](docs/ANDROID.md) for detailed setup instructions.
 
 ### Targeting multiple web servers
 
