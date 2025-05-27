@@ -16,8 +16,8 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 
 ## Test Commands 
 - `make test` - Run all tests with coverage
-- `ginkgo -focus="<test description>" ./tunnel` - Run a single test
-- `ginkgo -r -noColor` - Run tests without colors
+- `go test -run="<test name>" ./tunnel` - Run a single test
+- `go test ./...` - Run all tests in the project
 
 ## Lint Commands
 - `make lint` - Run gofmt check and go vet
@@ -29,7 +29,7 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - **Naming**: PascalCase for exported, camelCase for unexported, snake_case for files
 - **Error Handling**: Check errors immediately, return to caller or log with context
 - **Logging**: Use log15 with structured key-value pairs
-- **Tests**: Use Ginkgo BDD-style tests with Gomega assertions
+- **Tests**: Use standard Go testing with table-driven tests
 - **Blank Identifiers**: Don't use unused blank identifiers like `var _ fmt.Formatter`
 - **Go Version**: Use `go 1.24` format in go.mod (not `go 1.24.0`)
 
@@ -51,6 +51,8 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - Tests cover authentication, proxies, failures, timeouts, concurrent requests
 - Use `testutil.TestLogLevel()` to control log verbosity in tests
 - Port allocation uses `:0` to get random available ports
+- Use standard Go testing package with table-driven tests
+- Test files should be named `*_test.go` and placed alongside the code they test
 
 ## Security Considerations
 - Tokens must be at least 16 characters
@@ -69,3 +71,12 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - The application has no `-version` flag, check version in the generated `version.go` file
 - WebSocket ping/pong failures often indicate network issues or proxy interference
 - Request timeouts can be tuned with `-timeout` flag (default 30s)
+
+## CodeRabbit Review Settings
+The project uses CodeRabbit for automated code reviews (see `.coderabbit.yaml`). When writing code, ensure compliance with:
+- **Go conventions**: Use gofmt, organize imports (stdlib first), proper error handling
+- **Security**: Never log passwords/tokens, validate certificates, prevent timing attacks
+- **Testing**: Use standard Go testing with table-driven tests, cover edge cases
+- **Path-specific rules**: WebSocket code must follow patterns in tunnel/ws.go, use goroutine-per-request
+- **Excluded paths**: vendor/, build/, node_modules/, generated code, coverage.txt are not reviewed
+- CodeRabbit auto-approves dependency updates from Renovate and documentation-only changes
