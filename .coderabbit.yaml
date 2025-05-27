@@ -104,8 +104,6 @@ reviews:
   # Auto review configuration
   auto_review:
     drafts: true
-    labels:
-      - "WIP"
     ignore_title_keywords:
       - "WIP"
       - "DO NOT MERGE"
