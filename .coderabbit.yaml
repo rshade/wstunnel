@@ -1,0 +1,147 @@
+# CodeRabbit Configuration for WStunnel
+# This configuration aligns with the project's code quality standards and conventions
+
+# Core settings
+language: "en-US"
+early_access: false
+
+# Tools configuration
+reviews:
+  # Enable relevant tools for Go project
+  tools:
+    golangci-lint:
+      enabled: true
+
+    # Enable other relevant tools
+    languagetool:
+      enabled: true
+
+    shellcheck:
+      enabled: true
+
+    markdownlint:
+      enabled: true
+
+    # AST-based custom rules
+    ast-grep:
+      essential_rules: true
+
+    # Additional tools specific to this project
+    github-actions:
+      enabled: true
+
+    osv-scanner:
+      enabled: true
+
+    codeql:
+      enabled: true
+
+    hadolint:
+      enabled: true
+
+    yamllint:
+      enabled: true
+
+    gitleaks:
+      enabled: true
+
+  # Review profile - use assertive for thorough reviews
+  profile: "assertive"
+
+  # Path filters - exclude certain paths from review
+  path_filters:
+    - "!vendor/**"
+    - "!build/**"
+    - "!node_modules/**"
+    - "!**/*.pb.go"
+    - "!**/generated/**"
+    - "!coverage.txt"
+    - "!CLAUDE.md"
+    - "!.cursor-*"
+    - "!.aider*"
+    - "!.continue/**"
+
+  # File path instructions for Go-specific guidance
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        - Ensure code follows gofmt formatting standards
+        - Check that imports are properly organized (standard library first, third-party after)
+        - Verify error handling follows the pattern: check immediately, return or log with context
+        - Ensure logging uses log15 with structured key-value pairs
+        - Verify naming conventions: PascalCase for exported, camelCase for unexported
+        - Check for unhandled errors
+        - Verify proper use of contexts
+
+    - path: "tunnel/**/*.go"
+      instructions: |
+        - Check WebSocket handling follows established patterns in tunnel/ws.go
+        - Verify concurrent request handling uses goroutine-per-request pattern
+        - Check for security issues: no logging of passwords/tokens, proper certificate validation
+        - Ensure no unused blank identifiers (like `var _ fmt.Formatter`)
+        - Verify token authentication is properly implemented
+        - Check for timing attacks in authentication
+        - Ensure errors don't leak sensitive information
+
+    - path: "**/*_test.go"
+      instructions: |
+        - Confirm tests follow standard Go testing patterns
+        - Verify test coverage for edge cases and error conditions
+        - Prefer table-driven tests
+        - Test both success and error paths
+        - Mock external dependencies appropriately
+
+    - path: "go.mod"
+      instructions: |
+        - Ensure go.mod uses correct format (e.g., `go 1.24` not `go 1.24.0`)
+
+    - path: "whois/**"
+      instructions: |
+        - This is WHOIS lookup functionality
+        - Verify proper error handling for network operations
+        - Check for proper context usage in API calls
+
+  # Auto review configuration
+  auto_review:
+    drafts: true
+    labels:
+      - "WIP"
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "DRAFT"
+
+# Review behavior configuration
+review_status:
+  # Auto-resolve outdated comments when code is updated
+  auto_resolve_conversations: true
+
+  # Don't block merges on outdated review comments
+  block_merge_on_unresolved_conversations: false
+
+  # Only block merges for current/active issues
+  dismiss_stale_reviews: true
+
+  # Handle force pushes and amended commits gracefully
+  handle_force_push: true
+
+  # Automatically mark conversations as resolved when the problematic code is removed/fixed
+  # This is especially useful for amended commits
+  resolve_on_fix: true
+
+  # Don't re-review unchanged files after force push
+  skip_unchanged_files: true
+
+# Auto-approve configuration
+auto_approve:
+  # Dependency updates from Renovate
+  - author: "renovate[bot]"
+    files:
+      - "go.mod"
+      - "go.sum"
+
+  # Documentation-only changes
+  - files:
+      - "**/*.md"
+      - "docs/**"
+    require_review_from_owner: false

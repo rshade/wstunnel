@@ -89,6 +89,8 @@ type WSTunnelServer struct {
 	exitChan            chan struct{}           // channel to tell the tunnel goroutines to end
 	serverRegistry      map[token]*remoteServer // active remote servers indexed by token
 	serverRegistryMutex sync.Mutex              // mutex to protect map
+	tokenPasswords      map[token]string        // optional passwords for tokens
+	tokenPasswordsMutex sync.RWMutex            // mutex to protect password map
 }
 
 // name Lookups
@@ -131,21 +133,67 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	var httpTout = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
 	var slog = srvFlag.String("syslog", "", "syslog facility to log to")
 	var whoTok = srvFlag.String("robowhois", "", "robowhois.com API token")
+	var tokenPass = srvFlag.String("passwords", "", "comma-separated list of token:password pairs")
 
 	if err := srvFlag.Parse(args); err != nil {
 		wstunSrv.Log.Crit("Failed to parse server flags", "err", err)
 		os.Exit(1)
 	}
 
-	writePid(*pidf)
+	if err := writePid(*pidf); err != nil {
+		wstunSrv.Log.Error("Failed to write pidfile", "err", err)
+	}
 	wstunSrv.Log = makeLogger("WStunsrv", *logf, *slog)
 	wstunSrv.WSTimeout = calcWsTimeout(*tout)
+	cacheMutex.Lock()
 	whoToken = *whoTok
+	cacheMutex.Unlock()
 
 	wstunSrv.HTTPTimeout = time.Duration(*httpTout) * time.Second
 	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HTTPTimeout)
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
+
+	// Parse token passwords
+	wstunSrv.tokenPasswords = make(map[token]string)
+	if *tokenPass != "" {
+		pairs := strings.Split(*tokenPass, ",")
+		for _, pair := range pairs {
+			parts := strings.SplitN(pair, ":", 2)
+			if len(parts) == 2 {
+				tok := token(strings.TrimSpace(parts[0]))
+				pass := strings.TrimSpace(parts[1])
+
+				// Validate empty token
+				if tok == "" {
+					wstunSrv.Log.Error("Empty token in token:password pair", "pair", pair)
+					continue
+				}
+
+				// Validate empty password
+				if pass == "" {
+					wstunSrv.Log.Error("Empty password for token", "token", cutToken(tok))
+					continue
+				}
+
+				// Enforce minimum token length
+				if len(tok) < minTokenLen {
+					wstunSrv.Log.Error("Token too short", "token", cutToken(tok), "minLength", minTokenLen)
+					continue
+				}
+
+				// Check for duplicate tokens
+				if _, exists := wstunSrv.tokenPasswords[tok]; exists {
+					wstunSrv.Log.Warn("Duplicate token found, overwriting previous entry", "token", cutToken(tok))
+				}
+
+				wstunSrv.tokenPasswords[tok] = pass
+				wstunSrv.Log.Info("Token password configured", "token", cutToken(tok))
+			} else {
+				wstunSrv.Log.Warn("Invalid token:password pair", "pair", pair)
+			}
+		}
+	}
 
 	return &wstunSrv
 }
@@ -226,7 +274,7 @@ func (t *WSTunnelServer) Stop() {
 func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Wrap the response writer with our safe wrapper
 	safeW := &safeResponseWriter{ResponseWriter: w}
-	
+
 	if _, err := fmt.Fprintln(safeW, "WSTUNSRV RUNNING"); err != nil {
 		t.Log.Error("Failed to write response", "err", err)
 	}
@@ -236,7 +284,7 @@ func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Wrap the response writer with our safe wrapper
 	safeW := &safeResponseWriter{ResponseWriter: w}
-	
+
 	// let's start by doing a GC to ensure we reclaim file descriptors (?)
 	runtime.GC()
 
@@ -326,7 +374,7 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 func payloadHeaderHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Wrap the response writer with our safe wrapper
 	safeW := &safeResponseWriter{ResponseWriter: w}
-	
+
 	tok := r.Header.Get("X-Token")
 	if tok == "" {
 		t.Log.Info("HTTP Missing X-Token header", "req", r)
@@ -344,7 +392,7 @@ var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Wrap the response writer with our safe wrapper
 	safeW := &safeResponseWriter{ResponseWriter: w}
-	
+
 	reqURL := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqURL)
 	if len(m) != 3 {
@@ -360,7 +408,7 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
 	// Wrap the response writer with our safe wrapper
 	safeW := &safeResponseWriter{ResponseWriter: w}
-	
+
 	// create the request object
 	req := makeRequest(r, t.HTTPTimeout)
 	req.log = t.Log.New("token", cutToken(tok))
@@ -465,12 +513,12 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 
 // tunnelHandler handles tunnel establishment requests
 func tunnelHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
-	// Wrap the response writer with our safe wrapper
-	safeW := &safeResponseWriter{ResponseWriter: w}
-	
 	if r.Method == "GET" {
-		wsHandler(t, safeW, r)
+		// Pass the original response writer for websocket upgrade
+		wsHandler(t, w, r)
 	} else {
+		// Wrap the response writer with our safe wrapper for error responses
+		safeW := &safeResponseWriter{ResponseWriter: w}
 		safeError(safeW, "Only GET requests are supported", 400)
 	}
 }
@@ -492,12 +540,12 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		t.Log.Debug("WS tunnel exists", "token", cutToken(tok))
 		return rs
 	}
-	
+
 	if !create { // return null if create flag is not set
 		t.Log.Info("WS tunnel not found", "token", cutToken(tok))
 		return nil
 	}
-	
+
 	// construct new remote server
 	rs = &remoteServer{
 		token:        tok,
@@ -586,7 +634,7 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 	if !ok {
 		safeW = &safeResponseWriter{ResponseWriter: w}
 	}
-	
+
 	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)

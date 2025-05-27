@@ -51,7 +51,7 @@ var _ = Describe("Testing token request timeout", func() {
 			os.Exit(1)
 		}
 		wstunURL = "http://" + listener.Addr().String()
-		for !wstuncli.Connected {
+		for !wstuncli.IsConnected() {
 			time.Sleep(10 * time.Millisecond)
 		}
 	})

@@ -1,5 +1,7 @@
 # WStunnel - Web Sockets Tunnel
 
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/rshade/wstunnel?utm_source=oss&utm_medium=github&utm_campaign=rshade%2Fwstunnel&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+
 - Master:
 [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
 [![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
@@ -101,6 +103,12 @@ WSTUNSRV RUNNING
 $
 ```
 
+To require passwords for specific tokens, use the `-passwords` option:
+
+```bash
+$ ./wstunnel srv -port 8080 -passwords 'token1:password1,token2:password2' &
+```
+
 ### Start tunnel
 
 On `www.example.com` verify that you can access the local web site:
@@ -116,6 +124,26 @@ Now set-up the tunnel:
 $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret!!'
 2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 ```
+
+To use a token with a password for additional security:
+
+```bash
+$ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret!!:mypassword'
+```
+
+> **Security Warning**: Passing passwords via command-line arguments is not recommended as they can be exposed through:
+> - Process listings (visible to other users on the system)
+> - Shell history files
+> - System logs and crash dumps
+> - Command-line argument inspection tools
+>
+> Instead, consider these more secure alternatives:
+> - Use environment variables: `WSTUNNEL_PASSWORD=mypassword ./wstunnel cli ...`
+> - Store credentials in a configuration file with restricted permissions
+> - Use interactive password prompts (not yet implemented)
+> - Use a secrets management service
+>
+> The same warning applies to the `-passwords` option on the server side.
 
 ### Make a request through the tunnel
 

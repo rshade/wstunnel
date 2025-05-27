@@ -3,11 +3,13 @@
 package tunnel
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
+	"strings"
 
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
@@ -19,7 +21,7 @@ import (
 
 func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
 	log.Info("HTTP Error", "token", token, "error", err, "code", code)
-	
+
 	// Use safeError to avoid superfluous WriteHeader warnings
 	safeError(w, html.EscapeString(err), code)
 }
@@ -51,7 +53,7 @@ func safeError(w http.ResponseWriter, error string, code int) {
 	if !ok {
 		safeW = &safeResponseWriter{ResponseWriter: w}
 	}
-	
+
 	safeW.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	safeW.Header().Set("X-Content-Type-Options", "nosniff")
 	safeW.WriteHeader(code)
@@ -85,11 +87,68 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 				tok, minTokenLen), 400)
 		return
 	}
-	logTok := cutToken(token(tok))
+
+	// Check for password authentication if required
+	tokenStr := token(tok)
+	logTok := cutToken(tokenStr)
+
+	// Check if password is required for this token
+	t.tokenPasswordsMutex.RLock()
+	expectedPassword, hasPassword := t.tokenPasswords[tokenStr]
+	t.tokenPasswordsMutex.RUnlock()
+
+	// If token requires a password, validate it
+	if hasPassword {
+		// Extract password from Authorization header
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
+			httpError(t.Log, w, addr, "Authorization required for this token", 401)
+			return
+		}
+
+		// Parse Basic Auth
+		const prefix = "Basic "
+		if !strings.HasPrefix(strings.ToLower(auth), strings.ToLower(prefix)) {
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
+			httpError(t.Log, w, addr, "Invalid authorization type (must be Basic)", 401)
+			return
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(auth[len(prefix):]))
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
+			httpError(t.Log, w, addr, "Invalid authorization encoding", 401)
+			return
+		}
+
+		// Split username:password
+		credentials := strings.SplitN(string(decoded), ":", 2)
+		if len(credentials) != 2 {
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
+			httpError(t.Log, w, addr, "Invalid authorization format", 401)
+			return
+		}
+
+		// Verify token matches and password is correct using constant-time comparison
+		if !constantTimeEquals(credentials[0], string(tokenStr)) || !constantTimeEquals(credentials[1], expectedPassword) {
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"wstunnel\"")
+			httpError(t.Log, w, addr, "Invalid token or password", 401)
+			return
+		}
+
+		t.Log.Info("Token authenticated with password", "token", logTok)
+	} else {
+		// Token doesn't require a password, allow the connection
+		t.Log.Info("Token authenticated without password", "token", logTok)
+	}
 	// Upgrade to web sockets
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  100 * 1024,
 		WriteBufferSize: 100 * 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins for tunnel connections
+		},
 	}
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -105,7 +164,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Get/Create RemoteServer
-	rs := t.getRemoteServer(token(tok), true)
+	rs := t.getRemoteServer(tokenStr, true)
 	rs.remoteAddr = addr
 	rs.lastActivity = time.Now()
 	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws),
@@ -285,4 +344,16 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	if err := ws.Close(); err != nil {
 		rs.log.Error("Failed to close websocket", "err", err)
 	}
+}
+
+// constantTimeEquals performs a constant-time comparison of two strings to prevent timing attacks.
+func constantTimeEquals(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var result byte
+	for i := 0; i < len(a); i++ {
+		result |= a[i] ^ b[i]
+	}
+	return result == 0
 }

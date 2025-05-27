@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Add
+
+* Add support for per-token passwords for enhanced security (#50)
+  - Server: Use `-passwords 'token1:password1,token2:password2'` to require passwords for specific tokens
+  - Client: Use `-token 'mytoken:mypassword'` to authenticate with a password
+
 ### Fix
 
 * Fix timeout of requests to _token endpoint (#3)
