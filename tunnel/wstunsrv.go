@@ -71,12 +71,43 @@ type remoteServer struct {
 	remoteAddr      string                   // last remote addr of tunnel (debug)
 	remoteName      string                   // reverse DNS resolution of remoteAddr
 	remoteWhois     string                   // whois lookup of remoteAddr
+	clientVersion   string                   // version of the connected client
+	infoMutex       sync.RWMutex             // mutex to protect remoteName, remoteWhois, clientVersion
 	requestQueue    chan *remoteRequest      // queue of requests to be sent
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
 	readMutex       sync.Mutex // ensure that no more than one goroutine calls the websocket read methods concurrently
 	readCond        *sync.Cond // (NextReader, SetReadDeadline, SetPingHandler, ...)
+}
+
+// setClientVersion safely sets the client version
+func (rs *remoteServer) setClientVersion(version string) {
+	rs.infoMutex.Lock()
+	defer rs.infoMutex.Unlock()
+	rs.clientVersion = version
+}
+
+// getClientVersion safely gets the client version
+func (rs *remoteServer) getClientVersion() string {
+	rs.infoMutex.RLock()
+	defer rs.infoMutex.RUnlock()
+	return rs.clientVersion
+}
+
+// setRemoteInfo safely sets the remote name and whois information
+func (rs *remoteServer) setRemoteInfo(name, whois string) {
+	rs.infoMutex.Lock()
+	defer rs.infoMutex.Unlock()
+	rs.remoteName = name
+	rs.remoteWhois = whois
+}
+
+// getRemoteInfo safely gets the remote name and whois information
+func (rs *remoteServer) getRemoteInfo() (name, whois string) {
+	rs.infoMutex.RLock()
+	defer rs.infoMutex.RUnlock()
+	return rs.remoteName, rs.remoteWhois
 }
 
 // WSTunnelServer a wstunnel server construct
@@ -325,13 +356,20 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_addr=%s\n", i, rs.remoteAddr); err != nil {
 			rs.log.Error("Failed to write response", "err", err)
 		}
-		if rs.remoteName != "" {
-			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_dns=%s\n", i, rs.remoteName); err != nil {
+		remoteName, remoteWhois := rs.getRemoteInfo()
+		if remoteName != "" {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_dns=%s\n", i, remoteName); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 		}
-		if rs.remoteWhois != "" {
-			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_whois=%s\n", i, rs.remoteWhois); err != nil {
+		if remoteWhois != "" {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_whois=%s\n", i, remoteWhois); err != nil {
+				rs.log.Error("Failed to write response", "err", err)
+			}
+		}
+		clientVersion := rs.getClientVersion()
+		if clientVersion != "" {
+			if _, err := fmt.Fprintf(safeW, "tunnel%02d_client_version=%s\n", i, clientVersion); err != nil {
 				rs.log.Error("Failed to write response", "err", err)
 			}
 		}

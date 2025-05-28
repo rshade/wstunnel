@@ -167,11 +167,15 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	rs := t.getRemoteServer(tokenStr, true)
 	rs.remoteAddr = addr
 	rs.lastActivity = time.Now()
+	// Extract and store client version from header
+	clientVersion := r.Header.Get("X-Client-Version")
+	rs.setClientVersion(clientVersion)
 	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws),
-		"rs", rs)
+		"rs", rs, "client_version", clientVersion)
 	// do reverse DNS lookup asynchronously
 	go func() {
-		rs.remoteName, rs.remoteWhois = ipAddrLookup(t.Log, rs.remoteAddr)
+		name, whois := ipAddrLookup(t.Log, rs.remoteAddr)
+		rs.setRemoteInfo(name, whois)
 	}()
 	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)

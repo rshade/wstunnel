@@ -14,7 +14,10 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
-func init() { tunnel.SetVV("dummy") } // propagate version
+// VV is the version string, set at build time using ldflags
+var VV string
+
+func init() { tunnel.SetVV(VV) } // propagate version
 
 func main() {
 	if len(os.Args) < 2 {
@@ -34,8 +37,8 @@ func main() {
 		lookupWhois(os.Args[2:])
 		os.Exit(0)
 	case "version", "-version", "--version":
-		log15.Crit("dummy")
-		os.Exit(1)
+		fmt.Println(VV)
+		os.Exit(0)
 	default:
 		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv] [-options...]", os.Args[0]))
 		os.Exit(1)

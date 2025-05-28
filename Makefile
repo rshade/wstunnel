@@ -47,7 +47,7 @@ endif
 # the default target builds a binary in the top-level dir for whatever the local OS is
 default: $(EXE)
 $(EXE): *.go version
-	go build -o $(EXE) .
+	go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o $(EXE) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
 build: depend $(EXE) build/$(NAME)-linux-amd64.tgz build/$(NAME)-windows-amd64.zip
@@ -58,7 +58,7 @@ build: depend $(EXE) build/$(NAME)-linux-amd64.tgz build/$(NAME)-windows-amd64.z
 build/$(NAME)-%.tgz: *.go version depend
 	rm -rf build/$(NAME)
 	mkdir -p build/$(NAME)
-	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -o build/$(NAME)/$(NAME) .
+	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o build/$(NAME)/$(NAME) .
 	chmod +x build/$(NAME)/$(NAME)
 	for d in script init; do if [ -d $$d ]; then cp -r $$d build/$(NAME); fi; done
 	if [ "build/*/*.sh" != 'build/*/*.sh' ]; then \
@@ -70,7 +70,7 @@ build/$(NAME)-%.tgz: *.go version depend
 
 build/$(NAME)-%.zip: *.go version depend
 	mkdir -p build/$(NAME)
-	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -o build/$(NAME)/$(NAME).exe .
+	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o build/$(NAME)/$(NAME).exe .
 	zip $@ build/$(NAME)/$(NAME).exe
 	rm -r build/$(NAME)
 
