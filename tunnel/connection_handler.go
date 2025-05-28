@@ -85,8 +85,12 @@ func (ch *ConnectionHandler) Connect() error {
 		}
 	}
 
+	// Add client version header
+	header.Set("X-Client-Version", VV)
+
 	// Connect to the websocket server
-	ws, _, err := dialer.Dial(ch.client.Tunnel.String(), header)
+	tunnelURL := fmt.Sprintf("%s://%s/_tunnel", ch.client.Tunnel.Scheme, ch.client.Tunnel.Host)
+	ws, _, err := dialer.Dial(tunnelURL, header)
 	if err != nil {
 		ch.client.connManager.RecordError(err)
 		return fmt.Errorf("failed to connect to websocket server: %v", err)

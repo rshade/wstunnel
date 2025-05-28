@@ -232,6 +232,38 @@ server {
 }
 ````
 
+### Monitoring and Status Endpoint
+
+WStunnel server provides a `/_stats` endpoint that displays information about connected tunnels. When accessed from localhost, it provides detailed information including:
+
+- Number of active tunnels
+- Token information for each tunnel
+- Pending requests per tunnel
+- Client IP address and reverse DNS lookup
+- Client version information
+- Idle time for each tunnel
+
+Example output:
+
+```text
+tunnels=2
+
+tunnel00_token=my_token_...
+tunnel00_req_pending=0
+tunnel00_tun_addr=192.168.1.100:54321
+tunnel00_tun_dns=client.example.com
+tunnel00_client_version=wstunnel dev - 2025-05-27 18:59:20 - cli-version
+tunnel00_idle_secs=5.2
+
+tunnel01_token=another_t...
+tunnel01_req_pending=1
+tunnel01_tun_addr=10.0.0.5:12345
+tunnel01_client_version=wstunnel v1.0.0
+tunnel01_idle_secs=120.5
+```
+
+Note: Full statistics are only available when the endpoint is accessed from localhost. Remote requests will only see the total number of tunnels.
+
 ### Reading wstunnel server logs
 
 Sample:

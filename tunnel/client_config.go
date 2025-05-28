@@ -97,6 +97,11 @@ func NewWSTunnelClientFromConfig(config *ClientConfig) (*WSTunnelClient, error) 
 		if tunnelURL.Scheme != "ws" && tunnelURL.Scheme != "wss" {
 			return nil, fmt.Errorf("remote tunnel (-tunnel option) must begin with ws:// or wss://")
 		}
+		// Strip any custom path, query and fragment since tunnel endpoint is fixed to /_tunnel
+		tunnelURL.Path = ""
+		tunnelURL.RawPath = ""
+		tunnelURL.RawQuery = ""
+		tunnelURL.Fragment = ""
 		client.Tunnel = tunnelURL
 	} else {
 		return nil, fmt.Errorf("must specify tunnel server ws://hostname:port using -tunnel option")

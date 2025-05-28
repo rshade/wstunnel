@@ -255,6 +255,9 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		wstunCli.ClientPorts = clientPorts
 	}
 
+	// Initialize connection manager with default values
+	wstunCli.connManager = NewConnectionManager(5*time.Second, 0)
+
 	return &wstunCli
 }
 
@@ -339,6 +342,8 @@ func (t *WSTunnelClient) Start() error {
 			}
 			h := make(http.Header)
 			h.Add("Origin", t.Token)
+			// Add client version header
+			h.Add("X-Client-Version", VV)
 			// Add Authorization header for token password if provided
 			if t.Password != "" {
 				credentials := t.Token + ":" + t.Password

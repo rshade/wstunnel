@@ -348,6 +348,59 @@ func TestParseClientConfig(t *testing.T) {
 	}
 }
 
+var _ = Describe("Client Config URL Path Handling", func() {
+	Describe("NewWSTunnelClientFromConfig tunnel URL path stripping", func() {
+		It("should strip custom path from tunnel URL", func() {
+			config := &ClientConfig{
+				Token:  "mytoken12345678901",
+				Tunnel: "ws://localhost:8080/custom/path",
+			}
+			client, err := NewWSTunnelClientFromConfig(config)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Tunnel.Path).To(Equal(""))
+		})
+
+		It("should strip custom path from secure tunnel URL", func() {
+			config := &ClientConfig{
+				Token:  "mytoken12345678901",
+				Tunnel: "wss://user:pass@example.com:8443/path/to/tunnel",
+			}
+			client, err := NewWSTunnelClientFromConfig(config)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Tunnel.Path).To(Equal(""))
+		})
+
+		It("should handle tunnel URL without path", func() {
+			config := &ClientConfig{
+				Token:  "mytoken12345678901",
+				Tunnel: "ws://localhost:8080",
+			}
+			client, err := NewWSTunnelClientFromConfig(config)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Tunnel.Path).To(Equal(""))
+		})
+
+		It("should preserve other URL components when stripping path", func() {
+			config := &ClientConfig{
+				Token:  "mytoken12345678901",
+				Tunnel: "wss://user:pass@example.com:8443/path?query=value#fragment",
+			}
+			client, err := NewWSTunnelClientFromConfig(config)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Tunnel.Scheme).To(Equal("wss"))
+			Expect(client.Tunnel.Host).To(Equal("example.com:8443"))
+			Expect(client.Tunnel.User).NotTo(BeNil())
+			Expect(client.Tunnel.User.Username()).To(Equal("user"))
+			pass, _ := client.Tunnel.User.Password()
+			Expect(pass).To(Equal("pass"))
+			Expect(client.Tunnel.Path).To(Equal(""))
+			// Query and fragment are also stripped
+			Expect(client.Tunnel.RawQuery).To(Equal(""))
+			Expect(client.Tunnel.Fragment).To(Equal(""))
+		})
+	})
+})
+
 var _ = Describe("Client Config Token:Password Parsing", func() {
 	Describe("NewWSTunnelClientFromConfig token:password parsing", func() {
 		It("should parse token without password", func() {
