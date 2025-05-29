@@ -130,6 +130,12 @@ lint:
 	else \
 	  echo "golangci-lint not found, skipping"; \
 	fi
+	@if command -v yamllint > /dev/null; then \
+	  echo "Running yamllint..." && \
+	  yamllint .github/workflows/; \
+	else \
+	  echo "yamllint not found, skipping. Install with: pip install yamllint"; \
+	fi
 
 travis-test: lint
 	go test -race -coverprofile=coverage.txt -covermode=atomic ./...

@@ -182,3 +182,120 @@ func TestWsHandlerClientVersion(t *testing.T) {
 		t.Errorf("Expected response to contain client version, got: %s", string(body))
 	}
 }
+
+// TestMaxRequestsPerTunnel tests the max requests per tunnel configuration
+func TestMaxRequestsPerTunnel(t *testing.T) {
+	// Create a test server with custom max requests
+	ts := &WSTunnelServer{
+		Log:                  log15.Root(),
+		MaxRequestsPerTunnel: 5, // Set a low limit for testing
+		serverRegistry:       make(map[token]*remoteServer),
+		serverRegistryMutex:  sync.Mutex{},
+	}
+
+	testToken := token("test-token-12345678")
+	rs := ts.getRemoteServer(testToken, true)
+
+	// Verify the request queue has the correct capacity
+	// We can't directly check the capacity, but we can verify behavior
+	// by trying to fill it beyond the limit
+	requests := make([]*remoteRequest, 0)
+
+	// Add requests up to the limit
+	for i := 0; i < 5; i++ {
+		req := &remoteRequest{
+			id:        int16(i),
+			replyChan: make(chan responseBuffer, 1),
+			deadline:  time.Now().Add(30 * time.Second),
+			log:       rs.log.New("id", i),
+		}
+		err := rs.AddRequest(req)
+		if err != nil {
+			t.Errorf("Expected to add request %d successfully, got error: %v", i, err)
+		}
+		requests = append(requests, req)
+	}
+
+	// Try to add one more request, should fail
+	extraReq := &remoteRequest{
+		id:        int16(99),
+		replyChan: make(chan responseBuffer, 1),
+		deadline:  time.Now().Add(30 * time.Second),
+		log:       rs.log.New("id", 99),
+	}
+	err := rs.AddRequest(extraReq)
+	if err == nil {
+		t.Error("Expected error when adding request beyond limit, but got nil")
+	}
+	if !strings.Contains(err.Error(), "too many requests") {
+		t.Errorf("Expected error about too many requests, got: %v", err)
+	}
+
+	// Clean up requests
+	for _, req := range requests {
+		rs.RetireRequest(req)
+	}
+}
+
+// TestStatsHandlerWithLimits tests the stats handler includes the new configuration limits
+func TestStatsHandlerWithLimits(t *testing.T) {
+	// Create a test server with custom limits
+	ts := &WSTunnelServer{
+		Log:                  log15.Root(),
+		MaxRequestsPerTunnel: 25,
+		MaxClientsPerToken:   3,
+		serverRegistry:       make(map[token]*remoteServer),
+		serverRegistryMutex:  sync.Mutex{},
+		tokenClients:         make(map[token]int),
+		tokenClientsMutex:    sync.RWMutex{},
+	}
+
+	// Add some test data
+	testToken := token("test-token-12345678")
+	ts.tokenClientsMutex.Lock()
+	ts.tokenClients[testToken] = 2
+	ts.tokenClientsMutex.Unlock()
+
+	// Create request and recorder
+	req := httptest.NewRequest("GET", "/_stats", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+
+	// Call the handler
+	statsHandler(ts, w, req)
+
+	// Check response
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Error reading response: %v", err)
+	}
+
+	bodyStr := string(body)
+
+	// Check that configuration limits are included
+	expectedMaxRequests := "max_requests_per_tunnel=25"
+	if !strings.Contains(bodyStr, expectedMaxRequests) {
+		t.Errorf("Expected stats to contain %q, but got:\n%s", expectedMaxRequests, bodyStr)
+	}
+
+	expectedMaxClients := "max_clients_per_token=3"
+	if !strings.Contains(bodyStr, expectedMaxClients) {
+		t.Errorf("Expected stats to contain %q, but got:\n%s", expectedMaxClients, bodyStr)
+	}
+
+	// Check that client count info is included (token is truncated to 8 chars + "...")
+	expectedClientCount := "token_clients_test-tok...=2"
+	if !strings.Contains(bodyStr, expectedClientCount) {
+		t.Errorf("Expected stats to contain %q, but got:\n%s", expectedClientCount, bodyStr)
+	}
+
+	expectedTotalClients := "total_clients=2"
+	if !strings.Contains(bodyStr, expectedTotalClients) {
+		t.Errorf("Expected stats to contain %q, but got:\n%s", expectedTotalClients, bodyStr)
+	}
+}
