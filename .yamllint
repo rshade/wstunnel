@@ -1,0 +1,11 @@
+---
+extends: default
+
+rules:
+  document-start: disable  # GitHub Actions workflows don't need document start
+  line-length:
+    max: 120  # Increased from 80 to accommodate GitHub Actions long names
+  truthy:
+    allowed-values: ['true', 'false', 'on']  # Allow 'on' for GitHub Actions
+  comments:
+    min-spaces-from-content: 1  # Allow single space before comments

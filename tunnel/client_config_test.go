@@ -5,227 +5,275 @@ package tunnel
 import (
 	"strings"
 	"testing"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("ParseClientConfig", func() {
-	Describe("Token parsing", func() {
-		It("should parse token without password", func() {
-			args := []string{"-token", "mytoken12345678901", "-tunnel", "ws://localhost:8080"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Token).To(Equal("mytoken12345678901"))
-			Expect(config.Password).To(Equal(""))
-		})
-
-		It("should parse token with password", func() {
-			args := []string{"-token", "mytoken12345678901:mypassword", "-tunnel", "ws://localhost:8080"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Token).To(Equal("mytoken12345678901:mypassword"))
-			Expect(config.Password).To(Equal(""))
-		})
-	})
-
-	Describe("URL flags validation", func() {
-		It("should parse valid tunnel URL", func() {
-			args := []string{"-tunnel", "ws://example.com:8080", "-token", "test"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Tunnel).To(Equal("ws://example.com:8080"))
-		})
-
-		It("should parse valid secure tunnel URL", func() {
-			args := []string{"-tunnel", "wss://user:pass@example.com:8443/path", "-token", "test"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Tunnel).To(Equal("wss://user:pass@example.com:8443/path"))
-		})
-
-		It("should parse valid server URL", func() {
-			args := []string{"-server", "http://localhost:3000", "-tunnel", "ws://example.com", "-token", "test"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Server).To(Equal("http://localhost:3000"))
-		})
-
-		It("should parse valid secure server URL", func() {
-			args := []string{"-server", "https://localhost:3443", "-tunnel", "ws://example.com", "-token", "test"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Server).To(Equal("https://localhost:3443"))
-		})
-	})
-
-	Describe("Boolean flags", func() {
-		It("should default insecure to false", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Insecure).To(BeFalse())
-		})
-
-		It("should parse insecure flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-insecure"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Insecure).To(BeTrue())
-		})
-	})
-
-	Describe("Numeric flags", func() {
-		It("should use default timeout", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Timeout).To(Equal(30))
-		})
-
-		It("should parse custom timeout", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-timeout", "60"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Timeout).To(Equal(60))
-		})
-
-		It("should use default reconnect-delay", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ReconnectDelay).To(Equal(5))
-		})
-
-		It("should parse custom reconnect-delay", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-reconnect-delay", "10"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ReconnectDelay).To(Equal(10))
-		})
-
-		It("should use default max-retries", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.MaxRetries).To(Equal(0))
-		})
-
-		It("should parse custom max-retries", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-max-retries", "3"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.MaxRetries).To(Equal(3))
-		})
-	})
-
-	Describe("String flags", func() {
-		It("should parse regexp flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-regexp", "^https?://[a-z]+\\.example\\.com"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Regexp).To(Equal("^https?://[a-z]+\\.example\\.com"))
-		})
-
-		It("should parse pidfile flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-pidfile", "/var/run/wstunnel.pid"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.PidFile).To(Equal("/var/run/wstunnel.pid"))
-		})
-
-		It("should parse logfile flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-logfile", "/var/log/wstunnel.log"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.LogFile).To(Equal("/var/log/wstunnel.log"))
-		})
-
-		It("should parse statusfile flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-statusfile", "/var/run/wstunnel.status"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.StatusFile).To(Equal("/var/run/wstunnel.status"))
-		})
-
-		It("should parse certfile flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-certfile", "/etc/ssl/certs/ca.pem"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.CertFile).To(Equal("/etc/ssl/certs/ca.pem"))
-		})
-
-		It("should parse proxy flag", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-proxy", "http://user:pass@proxy.example.com:8080"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Proxy).To(Equal("http://user:pass@proxy.example.com:8080"))
-		})
-	})
-
-	Describe("Client-ports parsing", func() {
-		It("should parse single port", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8080"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ClientPorts).To(Equal("8080"))
-		})
-
-		It("should parse multiple ports", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8080,8081,8082"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ClientPorts).To(Equal("8080,8081,8082"))
-		})
-
-		It("should parse port ranges", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8000..8100"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ClientPorts).To(Equal("8000..8100"))
-		})
-
-		It("should parse mixed ports and ranges", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8000..8100,8300..8400,8500,8505"}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.ClientPorts).To(Equal("8000..8100,8300..8400,8500,8505"))
-		})
-	})
-
-	Describe("Error conditions", func() {
-		It("should handle empty arguments", func() {
-			args := []string{}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config).NotTo(BeNil())
-		})
-
-		It("should handle unknown flags", func() {
-			args := []string{"-unknown-flag", "value", "-token", "test", "-tunnel", "ws://localhost"}
-			_, err := ParseClientConfig(args)
-			// With ContinueOnError, unknown flags cause an error
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unknown"))
-		})
-
-		It("should handle missing flag values", func() {
-			args := []string{"-token"}
-			// This will cause flag.Parse to return an error
-			_, err := ParseClientConfig(args)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("should handle invalid numeric values", func() {
-			args := []string{"-token", "test", "-tunnel", "ws://localhost", "-timeout", "invalid"}
-			_, err := ParseClientConfig(args)
-			Expect(err).To(HaveOccurred())
-		})
-	})
-
-	Describe("All flags combined", func() {
-		It("should parse all flags correctly", func() {
-			args := []string{
+// TestParseClientConfigFlags tests the ParseClientConfig function
+func TestParseClientConfigFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantErr     bool
+		errContains string
+		checkConfig func(*testing.T, *ClientConfig)
+	}{
+		// Token parsing tests
+		{
+			name: "parse token without password",
+			args: []string{"-token", "mytoken12345678901", "-tunnel", "ws://localhost:8080"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", cfg.Token)
+				}
+				if cfg.Password != "" {
+					t.Errorf("Expected empty password, got %q", cfg.Password)
+				}
+			},
+		},
+		{
+			name: "parse token with password",
+			args: []string{"-token", "mytoken12345678901:mypassword", "-tunnel", "ws://localhost:8080"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Token != "mytoken12345678901:mypassword" {
+					t.Errorf("Expected token 'mytoken12345678901:mypassword', got %q", cfg.Token)
+				}
+				if cfg.Password != "" {
+					t.Errorf("Expected empty password, got %q", cfg.Password)
+				}
+			},
+		},
+		// URL flags validation tests
+		{
+			name: "parse valid tunnel URL",
+			args: []string{"-tunnel", "ws://example.com:8080", "-token", "test"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Tunnel != "ws://example.com:8080" {
+					t.Errorf("Expected tunnel 'ws://example.com:8080', got %q", cfg.Tunnel)
+				}
+			},
+		},
+		{
+			name: "parse valid secure tunnel URL",
+			args: []string{"-tunnel", "wss://user:pass@example.com:8443/path", "-token", "test"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Tunnel != "wss://user:pass@example.com:8443/path" {
+					t.Errorf("Expected tunnel 'wss://user:pass@example.com:8443/path', got %q", cfg.Tunnel)
+				}
+			},
+		},
+		{
+			name: "parse valid server URL",
+			args: []string{"-server", "http://localhost:3000", "-tunnel", "ws://example.com", "-token", "test"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Server != "http://localhost:3000" {
+					t.Errorf("Expected server 'http://localhost:3000', got %q", cfg.Server)
+				}
+			},
+		},
+		{
+			name: "parse valid secure server URL",
+			args: []string{"-server", "https://localhost:3443", "-tunnel", "ws://example.com", "-token", "test"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Server != "https://localhost:3443" {
+					t.Errorf("Expected server 'https://localhost:3443', got %q", cfg.Server)
+				}
+			},
+		},
+		// Boolean flags tests
+		{
+			name: "default insecure to false",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Insecure {
+					t.Error("Expected insecure to be false")
+				}
+			},
+		},
+		{
+			name: "parse insecure flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-insecure"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if !cfg.Insecure {
+					t.Error("Expected insecure to be true")
+				}
+			},
+		},
+		// Numeric flags tests
+		{
+			name: "use default timeout",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Timeout != 30 {
+					t.Errorf("Expected timeout 30, got %d", cfg.Timeout)
+				}
+			},
+		},
+		{
+			name: "parse custom timeout",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-timeout", "60"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Timeout != 60 {
+					t.Errorf("Expected timeout 60, got %d", cfg.Timeout)
+				}
+			},
+		},
+		{
+			name: "use default reconnect-delay",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ReconnectDelay != 5 {
+					t.Errorf("Expected reconnect-delay 5, got %d", cfg.ReconnectDelay)
+				}
+			},
+		},
+		{
+			name: "parse custom reconnect-delay",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-reconnect-delay", "10"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ReconnectDelay != 10 {
+					t.Errorf("Expected reconnect-delay 10, got %d", cfg.ReconnectDelay)
+				}
+			},
+		},
+		{
+			name: "use default max-retries",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.MaxRetries != 0 {
+					t.Errorf("Expected max-retries 0, got %d", cfg.MaxRetries)
+				}
+			},
+		},
+		{
+			name: "parse custom max-retries",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-max-retries", "3"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.MaxRetries != 3 {
+					t.Errorf("Expected max-retries 3, got %d", cfg.MaxRetries)
+				}
+			},
+		},
+		// String flags tests
+		{
+			name: "parse regexp flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-regexp", "^https?://[a-z]+\\.example\\.com"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Regexp != "^https?://[a-z]+\\.example\\.com" {
+					t.Errorf("Expected regexp '^https?://[a-z]+\\.example\\.com', got %q", cfg.Regexp)
+				}
+			},
+		},
+		{
+			name: "parse pidfile flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-pidfile", "/var/run/wstunnel.pid"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.PidFile != "/var/run/wstunnel.pid" {
+					t.Errorf("Expected pidfile '/var/run/wstunnel.pid', got %q", cfg.PidFile)
+				}
+			},
+		},
+		{
+			name: "parse logfile flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-logfile", "/var/log/wstunnel.log"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.LogFile != "/var/log/wstunnel.log" {
+					t.Errorf("Expected logfile '/var/log/wstunnel.log', got %q", cfg.LogFile)
+				}
+			},
+		},
+		{
+			name: "parse statusfile flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-statusfile", "/var/run/wstunnel.status"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.StatusFile != "/var/run/wstunnel.status" {
+					t.Errorf("Expected statusfile '/var/run/wstunnel.status', got %q", cfg.StatusFile)
+				}
+			},
+		},
+		{
+			name: "parse certfile flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-certfile", "/etc/ssl/certs/ca.pem"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.CertFile != "/etc/ssl/certs/ca.pem" {
+					t.Errorf("Expected certfile '/etc/ssl/certs/ca.pem', got %q", cfg.CertFile)
+				}
+			},
+		},
+		{
+			name: "parse proxy flag",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-proxy", "http://user:pass@proxy.example.com:8080"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Proxy != "http://user:pass@proxy.example.com:8080" {
+					t.Errorf("Expected proxy 'http://user:pass@proxy.example.com:8080', got %q", cfg.Proxy)
+				}
+			},
+		},
+		// Client-ports parsing tests
+		{
+			name: "parse single port",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8080"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ClientPorts != "8080" {
+					t.Errorf("Expected client-ports '8080', got %q", cfg.ClientPorts)
+				}
+			},
+		},
+		{
+			name: "parse multiple ports",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8080,8081,8082"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ClientPorts != "8080,8081,8082" {
+					t.Errorf("Expected client-ports '8080,8081,8082', got %q", cfg.ClientPorts)
+				}
+			},
+		},
+		{
+			name: "parse port ranges",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8000..8100"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ClientPorts != "8000..8100" {
+					t.Errorf("Expected client-ports '8000..8100', got %q", cfg.ClientPorts)
+				}
+			},
+		},
+		{
+			name: "parse mixed ports and ranges",
+			args: []string{"-token", "test", "-tunnel", "ws://localhost", "-client-ports", "8000..8100,8300..8400,8500,8505"},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.ClientPorts != "8000..8100,8300..8400,8500,8505" {
+					t.Errorf("Expected client-ports '8000..8100,8300..8400,8500,8505', got %q", cfg.ClientPorts)
+				}
+			},
+		},
+		// Error conditions tests
+		{
+			name: "handle empty arguments",
+			args: []string{},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg == nil {
+					t.Error("Expected non-nil config")
+				}
+			},
+		},
+		{
+			name:        "handle unknown flags",
+			args:        []string{"-unknown-flag", "value", "-token", "test", "-tunnel", "ws://localhost"},
+			wantErr:     true,
+			errContains: "unknown",
+		},
+		{
+			name:    "handle missing flag values",
+			args:    []string{"-token"},
+			wantErr: true,
+		},
+		{
+			name:    "handle invalid numeric values",
+			args:    []string{"-token", "test", "-tunnel", "ws://localhost", "-timeout", "invalid"},
+			wantErr: true,
+		},
+		// All flags combined test
+		{
+			name: "parse all flags correctly",
+			args: []string{
 				"-token", "mytoken12345678901:password123",
 				"-tunnel", "wss://user:pass@tunnel.example.com:8443/path",
 				"-server", "https://backend.local:3443",
@@ -240,26 +288,73 @@ var _ = Describe("ParseClientConfig", func() {
 				"-certfile", "/etc/ssl/ca.pem",
 				"-reconnect-delay", "15",
 				"-max-retries", "5",
+			},
+			checkConfig: func(t *testing.T, cfg *ClientConfig) {
+				if cfg.Token != "mytoken12345678901:password123" {
+					t.Errorf("Expected token 'mytoken12345678901:password123', got %q", cfg.Token)
+				}
+				if cfg.Tunnel != "wss://user:pass@tunnel.example.com:8443/path" {
+					t.Errorf("Expected tunnel 'wss://user:pass@tunnel.example.com:8443/path', got %q", cfg.Tunnel)
+				}
+				if cfg.Server != "https://backend.local:3443" {
+					t.Errorf("Expected server 'https://backend.local:3443', got %q", cfg.Server)
+				}
+				if !cfg.Insecure {
+					t.Error("Expected insecure to be true")
+				}
+				if cfg.Regexp != "^https?://.*\\.local" {
+					t.Errorf("Expected regexp '^https?://.*\\.local', got %q", cfg.Regexp)
+				}
+				if cfg.Timeout != 120 {
+					t.Errorf("Expected timeout 120, got %d", cfg.Timeout)
+				}
+				if cfg.PidFile != "/var/run/wstunnel.pid" {
+					t.Errorf("Expected pidfile '/var/run/wstunnel.pid', got %q", cfg.PidFile)
+				}
+				if cfg.LogFile != "/var/log/wstunnel.log" {
+					t.Errorf("Expected logfile '/var/log/wstunnel.log', got %q", cfg.LogFile)
+				}
+				if cfg.StatusFile != "/var/run/wstunnel.status" {
+					t.Errorf("Expected statusfile '/var/run/wstunnel.status', got %q", cfg.StatusFile)
+				}
+				if cfg.Proxy != "http://proxy.local:3128" {
+					t.Errorf("Expected proxy 'http://proxy.local:3128', got %q", cfg.Proxy)
+				}
+				if cfg.ClientPorts != "8000..8100,9000,9005" {
+					t.Errorf("Expected client-ports '8000..8100,9000,9005', got %q", cfg.ClientPorts)
+				}
+				if cfg.CertFile != "/etc/ssl/ca.pem" {
+					t.Errorf("Expected certfile '/etc/ssl/ca.pem', got %q", cfg.CertFile)
+				}
+				if cfg.ReconnectDelay != 15 {
+					t.Errorf("Expected reconnect-delay 15, got %d", cfg.ReconnectDelay)
+				}
+				if cfg.MaxRetries != 5 {
+					t.Errorf("Expected max-retries 5, got %d", cfg.MaxRetries)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture loop variable
+		t.Run(tt.name, func(t *testing.T) {
+			config, err := ParseClientConfig(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseClientConfig() error = %v, wantErr %v", err, tt.wantErr)
+				return
 			}
-			config, err := ParseClientConfig(args)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(config.Token).To(Equal("mytoken12345678901:password123"))
-			Expect(config.Tunnel).To(Equal("wss://user:pass@tunnel.example.com:8443/path"))
-			Expect(config.Server).To(Equal("https://backend.local:3443"))
-			Expect(config.Insecure).To(BeTrue())
-			Expect(config.Regexp).To(Equal("^https?://.*\\.local"))
-			Expect(config.Timeout).To(Equal(120))
-			Expect(config.PidFile).To(Equal("/var/run/wstunnel.pid"))
-			Expect(config.LogFile).To(Equal("/var/log/wstunnel.log"))
-			Expect(config.StatusFile).To(Equal("/var/run/wstunnel.status"))
-			Expect(config.Proxy).To(Equal("http://proxy.local:3128"))
-			Expect(config.ClientPorts).To(Equal("8000..8100,9000,9005"))
-			Expect(config.CertFile).To(Equal("/etc/ssl/ca.pem"))
-			Expect(config.ReconnectDelay).To(Equal(15))
-			Expect(config.MaxRetries).To(Equal(5))
+			if tt.wantErr && tt.errContains != "" && err != nil {
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("ParseClientConfig() error = %v, want error containing %q", err, tt.errContains)
+				}
+			}
+			if !tt.wantErr && tt.checkConfig != nil {
+				tt.checkConfig(t, config)
+			}
 		})
-	})
-})
+	}
+}
 
 // TestParseClientConfig provides additional unit tests using Go's standard testing
 func TestParseClientConfig(t *testing.T) {
@@ -335,6 +430,7 @@ func TestParseClientConfig(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			config, err := ParseClientConfig(tt.args)
 			if (err != nil) != tt.wantErr {
@@ -348,266 +444,401 @@ func TestParseClientConfig(t *testing.T) {
 	}
 }
 
-var _ = Describe("Client Config URL Path Handling", func() {
-	Describe("NewWSTunnelClientFromConfig tunnel URL path stripping", func() {
-		It("should strip custom path from tunnel URL", func() {
-			config := &ClientConfig{
+// TestClientConfigURLPathHandling tests URL path handling in NewWSTunnelClientFromConfig
+func TestClientConfigURLPathHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *ClientConfig
+		checkClient func(*testing.T, *WSTunnelClient)
+	}{
+		{
+			name: "strip custom path from tunnel URL",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901",
 				Tunnel: "ws://localhost:8080/custom/path",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Tunnel.Path).To(Equal(""))
-		})
-
-		It("should strip custom path from secure tunnel URL", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Tunnel.Path != "" {
+					t.Errorf("Expected empty path, got %q", client.Tunnel.Path)
+				}
+			},
+		},
+		{
+			name: "strip custom path from secure tunnel URL",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901",
 				Tunnel: "wss://user:pass@example.com:8443/path/to/tunnel",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Tunnel.Path).To(Equal(""))
-		})
-
-		It("should handle tunnel URL without path", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Tunnel.Path != "" {
+					t.Errorf("Expected empty path, got %q", client.Tunnel.Path)
+				}
+			},
+		},
+		{
+			name: "handle tunnel URL without path",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Tunnel.Path).To(Equal(""))
-		})
-
-		It("should preserve other URL components when stripping path", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Tunnel.Path != "" {
+					t.Errorf("Expected empty path, got %q", client.Tunnel.Path)
+				}
+			},
+		},
+		{
+			name: "preserve other URL components when stripping path",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901",
 				Tunnel: "wss://user:pass@example.com:8443/path?query=value#fragment",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Tunnel.Scheme).To(Equal("wss"))
-			Expect(client.Tunnel.Host).To(Equal("example.com:8443"))
-			Expect(client.Tunnel.User).NotTo(BeNil())
-			Expect(client.Tunnel.User.Username()).To(Equal("user"))
-			pass, _ := client.Tunnel.User.Password()
-			Expect(pass).To(Equal("pass"))
-			Expect(client.Tunnel.Path).To(Equal(""))
-			// Query and fragment are also stripped
-			Expect(client.Tunnel.RawQuery).To(Equal(""))
-			Expect(client.Tunnel.Fragment).To(Equal(""))
-		})
-	})
-})
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Tunnel.Scheme != "wss" {
+					t.Errorf("Expected scheme 'wss', got %q", client.Tunnel.Scheme)
+				}
+				if client.Tunnel.Host != "example.com:8443" {
+					t.Errorf("Expected host 'example.com:8443', got %q", client.Tunnel.Host)
+				}
+				if client.Tunnel.User == nil {
+					t.Error("Expected non-nil user info")
+				} else {
+					if client.Tunnel.User.Username() != "user" {
+						t.Errorf("Expected username 'user', got %q", client.Tunnel.User.Username())
+					}
+					pass, _ := client.Tunnel.User.Password()
+					if pass != "pass" {
+						t.Errorf("Expected password 'pass', got %q", pass)
+					}
+				}
+				if client.Tunnel.Path != "" {
+					t.Errorf("Expected empty path, got %q", client.Tunnel.Path)
+				}
+				// Query and fragment are also stripped
+				if client.Tunnel.RawQuery != "" {
+					t.Errorf("Expected empty RawQuery, got %q", client.Tunnel.RawQuery)
+				}
+				if client.Tunnel.Fragment != "" {
+					t.Errorf("Expected empty Fragment, got %q", client.Tunnel.Fragment)
+				}
+			},
+		},
+	}
 
-var _ = Describe("Client Config Token:Password Parsing", func() {
-	Describe("NewWSTunnelClientFromConfig token:password parsing", func() {
-		It("should parse token without password", func() {
-			config := &ClientConfig{
+	for _, tt := range tests {
+		tt := tt // capture loop variable
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewWSTunnelClientFromConfig(tt.config)
+			if err != nil {
+				t.Errorf("NewWSTunnelClientFromConfig() error = %v", err)
+				return
+			}
+			if tt.checkClient != nil {
+				tt.checkClient(t, client)
+			}
+		})
+	}
+}
+
+// TestClientConfigTokenPasswordParsing tests token:password parsing in NewWSTunnelClientFromConfig
+func TestClientConfigTokenPasswordParsing(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *ClientConfig
+		checkClient func(*testing.T, *WSTunnelClient)
+	}{
+		{
+			name: "parse token without password",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal(""))
-		})
-
-		It("should parse token with password", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "" {
+					t.Errorf("Expected empty password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "parse token with password",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901:mypassword",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal("mypassword"))
-		})
-
-		It("should handle token with multiple colons", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "mypassword" {
+					t.Errorf("Expected password 'mypassword', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle token with multiple colons",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901:password:with:colons",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal("password:with:colons"))
-		})
-
-		It("should handle empty token before colon", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "password:with:colons" {
+					t.Errorf("Expected password 'password:with:colons', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle empty token before colon",
+			config: &ClientConfig{
 				Token:  ":password",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal(""))
-			Expect(client.Password).To(Equal("password"))
-		})
-
-		It("should handle empty password after colon", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "" {
+					t.Errorf("Expected empty token, got %q", client.Token)
+				}
+				if client.Password != "password" {
+					t.Errorf("Expected password 'password', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle empty password after colon",
+			config: &ClientConfig{
 				Token:  "mytoken12345678901:",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal(""))
-		})
-
-		It("should handle completely empty token", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "" {
+					t.Errorf("Expected empty password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle completely empty token",
+			config: &ClientConfig{
 				Token:  "",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal(""))
-			Expect(client.Password).To(Equal(""))
-		})
-
-		It("should handle token with special characters", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "" {
+					t.Errorf("Expected empty token, got %q", client.Token)
+				}
+				if client.Password != "" {
+					t.Errorf("Expected empty password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle token with special characters",
+			config: &ClientConfig{
 				Token:  "token!@#$%^&*()_+-=:pass!@#$%^&*()_+-=",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token!@#$%^&*()_+-="))
-			Expect(client.Password).To(Equal("pass!@#$%^&*()_+-="))
-		})
-
-		It("should handle token with URL-unsafe characters", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token!@#$%^&*()_+-=" {
+					t.Errorf("Expected token 'token!@#$%%^&*()_+-=', got %q", client.Token)
+				}
+				if client.Password != "pass!@#$%^&*()_+-=" {
+					t.Errorf("Expected password 'pass!@#$%%^&*()_+-=', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle token with URL-unsafe characters",
+			config: &ClientConfig{
 				Token:  "token<>[]{}|\\:pass<>[]{}|\\",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token<>[]{}|\\"))
-			Expect(client.Password).To(Equal("pass<>[]{}|\\"))
-		})
-
-		It("should handle very long token", func() {
-			longToken := strings.Repeat("a", 1000)
-			config := &ClientConfig{
-				Token:  longToken + ":password",
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token<>[]{}|\\" {
+					t.Errorf("Expected token 'token<>[]{}|\\', got %q", client.Token)
+				}
+				if client.Password != "pass<>[]{}|\\" {
+					t.Errorf("Expected password 'pass<>[]{}|\\', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle very long token",
+			config: &ClientConfig{
+				Token:  strings.Repeat("a", 1000) + ":password",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal(longToken))
-			Expect(client.Password).To(Equal("password"))
-		})
-
-		It("should handle very long password", func() {
-			longPassword := strings.Repeat("b", 1000)
-			config := &ClientConfig{
-				Token:  "mytoken12345678901:" + longPassword,
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				longToken := strings.Repeat("a", 1000)
+				if client.Token != longToken {
+					t.Errorf("Expected long token, got %q", client.Token)
+				}
+				if client.Password != "password" {
+					t.Errorf("Expected password 'password', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle very long password",
+			config: &ClientConfig{
+				Token:  "mytoken12345678901:" + strings.Repeat("b", 1000),
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal(longPassword))
-		})
-
-		It("should handle very long token and password", func() {
-			longToken := strings.Repeat("a", 1000)
-			longPassword := strings.Repeat("b", 1000)
-			config := &ClientConfig{
-				Token:  longToken + ":" + longPassword,
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				longPassword := strings.Repeat("b", 1000)
+				if client.Password != longPassword {
+					t.Errorf("Expected long password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle very long token and password",
+			config: &ClientConfig{
+				Token:  strings.Repeat("a", 1000) + ":" + strings.Repeat("b", 1000),
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal(longToken))
-			Expect(client.Password).To(Equal(longPassword))
-		})
-
-		It("should handle only colon as token", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				longToken := strings.Repeat("a", 1000)
+				longPassword := strings.Repeat("b", 1000)
+				if client.Token != longToken {
+					t.Errorf("Expected long token, got %q", client.Token)
+				}
+				if client.Password != longPassword {
+					t.Errorf("Expected long password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle only colon as token",
+			config: &ClientConfig{
 				Token:  ":",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal(""))
-			Expect(client.Password).To(Equal(""))
-		})
-
-		It("should handle multiple consecutive colons", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "" {
+					t.Errorf("Expected empty token, got %q", client.Token)
+				}
+				if client.Password != "" {
+					t.Errorf("Expected empty password, got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle multiple consecutive colons",
+			config: &ClientConfig{
 				Token:  "token:::password",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token"))
-			Expect(client.Password).To(Equal("::password"))
-		})
-
-		It("should handle newlines in token and password", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token" {
+					t.Errorf("Expected token 'token', got %q", client.Token)
+				}
+				if client.Password != "::password" {
+					t.Errorf("Expected password '::password', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle newlines in token and password",
+			config: &ClientConfig{
 				Token:  "token\nwith\nnewline:pass\nwith\nnewline",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token\nwith\nnewline"))
-			Expect(client.Password).To(Equal("pass\nwith\nnewline"))
-		})
-
-		It("should handle tabs and spaces", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token\nwith\nnewline" {
+					t.Errorf("Expected token 'token\\nwith\\nnewline', got %q", client.Token)
+				}
+				if client.Password != "pass\nwith\nnewline" {
+					t.Errorf("Expected password 'pass\\nwith\\nnewline', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle tabs and spaces",
+			config: &ClientConfig{
 				Token:  "token with spaces:pass\twith\ttabs",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token with spaces"))
-			Expect(client.Password).To(Equal("pass\twith\ttabs"))
-		})
-
-		It("should handle unicode characters", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token with spaces" {
+					t.Errorf("Expected token 'token with spaces', got %q", client.Token)
+				}
+				if client.Password != "pass\twith\ttabs" {
+					t.Errorf("Expected password 'pass\\twith\\ttabs', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "handle unicode characters",
+			config: &ClientConfig{
 				Token:  "token🔒unicode:pass🔑word",
 				Tunnel: "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("token🔒unicode"))
-			Expect(client.Password).To(Equal("pass🔑word"))
-		})
-
-		It("should preserve explicit password parameter when no colon in token", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "token🔒unicode" {
+					t.Errorf("Expected token 'token🔒unicode', got %q", client.Token)
+				}
+				if client.Password != "pass🔑word" {
+					t.Errorf("Expected password 'pass🔑word', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "preserve explicit password parameter when no colon in token",
+			config: &ClientConfig{
 				Token:    "mytoken12345678901",
 				Password: "explicitpassword",
 				Tunnel:   "ws://localhost:8080",
-			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal("explicitpassword"))
-		})
-
-		It("should override explicit password parameter when colon in token", func() {
-			config := &ClientConfig{
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "explicitpassword" {
+					t.Errorf("Expected password 'explicitpassword', got %q", client.Password)
+				}
+			},
+		},
+		{
+			name: "override explicit password parameter when colon in token",
+			config: &ClientConfig{
 				Token:    "mytoken12345678901:colonpassword",
 				Password: "explicitpassword",
 				Tunnel:   "ws://localhost:8080",
+			},
+			checkClient: func(t *testing.T, client *WSTunnelClient) {
+				if client.Token != "mytoken12345678901" {
+					t.Errorf("Expected token 'mytoken12345678901', got %q", client.Token)
+				}
+				if client.Password != "colonpassword" {
+					t.Errorf("Expected password 'colonpassword', got %q", client.Password)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture loop variable
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewWSTunnelClientFromConfig(tt.config)
+			if err != nil {
+				t.Errorf("NewWSTunnelClientFromConfig() error = %v", err)
+				return
 			}
-			client, err := NewWSTunnelClientFromConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client.Token).To(Equal("mytoken12345678901"))
-			Expect(client.Password).To(Equal("colonpassword"))
+			if tt.checkClient != nil {
+				tt.checkClient(t, client)
+			}
 		})
-	})
-})
+	}
+}
 
 // TestTokenPasswordParsingUnit provides additional unit tests using Go's standard testing
 func TestTokenPasswordParsingUnit(t *testing.T) {
@@ -764,6 +995,7 @@ func TestTokenPasswordParsingUnit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // capture loop variable
 		t.Run(tt.name, func(t *testing.T) {
 			// Simulate the parsing logic from client_config.go
 			var token, password string
