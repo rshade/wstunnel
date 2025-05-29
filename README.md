@@ -103,10 +103,46 @@ WSTUNSRV RUNNING
 $
 ```
 
+#### Server Configuration Options
+
+The WStunnel server supports several configuration options to control resource usage and security:
+
+**Password Authentication:**
 To require passwords for specific tokens, use the `-passwords` option:
 
 ```bash
 $ ./wstunnel srv -port 8080 -passwords 'token1:password1,token2:password2' &
+2024/01/19 09:51:31 Listening on port 8080
+$ # Server is now running with password authentication
+```
+
+**Request Limiting:**
+To control the maximum number of queued requests per tunnel (default: 20):
+
+```bash
+$ ./wstunnel srv -port 8080 -max-requests-per-tunnel 50 &
+2024/01/19 09:51:31 Listening on port 8080
+```
+
+This prevents any single tunnel from consuming too many server resources by limiting how many requests can be queued for processing.
+
+**Client Limiting:**
+To limit the number of clients that can connect with the same token (default: unlimited):
+
+```bash
+$ ./wstunnel srv -port 8080 -max-clients-per-token 1 &
+2024/01/19 09:51:31 Listening on port 8080
+```
+
+This is useful when you want to ensure only a single client instance per token is allowed, preventing unauthorized token sharing or connection conflicts.
+
+**Combined Configuration Example:**
+
+```bash
+$ ./wstunnel srv -port 8080 \
+  -passwords 'prod-token:secure-password,dev-token:dev-pass' \
+  -max-requests-per-tunnel 30 \
+  -max-clients-per-token 2 &
 ```
 
 ### Start tunnel
@@ -237,16 +273,23 @@ server {
 WStunnel server provides a `/_stats` endpoint that displays information about connected tunnels. When accessed from localhost, it provides detailed information including:
 
 - Number of active tunnels
+- Server configuration limits
 - Token information for each tunnel
 - Pending requests per tunnel
 - Client IP address and reverse DNS lookup
 - Client version information
 - Idle time for each tunnel
+- Current client counts per token (when limits are configured)
 
 Example output:
 
 ```text
 tunnels=2
+max_requests_per_tunnel=20
+max_clients_per_token=1
+token_clients_my_token=1
+token_clients_another_=1
+total_clients=2
 
 tunnel00_token=my_token_...
 tunnel00_req_pending=0
@@ -261,6 +304,13 @@ tunnel01_tun_addr=10.0.0.5:12345
 tunnel01_client_version=wstunnel v1.0.0
 tunnel01_idle_secs=120.5
 ```
+
+The configuration limits section shows:
+
+- `max_requests_per_tunnel`: Maximum queued requests per tunnel
+- `max_clients_per_token`: Maximum clients allowed per token (0 = unlimited)
+- `token_clients_*`: Current number of clients for each token (when limits are configured)
+- `total_clients`: Total number of connected clients across all tokens
 
 Note: Full statistics are only available when the endpoint is accessed from localhost. Remote requests will only see the total number of tunnels.
 

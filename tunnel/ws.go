@@ -142,6 +142,46 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		// Token doesn't require a password, allow the connection
 		t.Log.Info("Token authenticated without password", "token", logTok)
 	}
+
+	// Check max clients per token limit before upgrade
+	var quotaReserved bool
+	if t.MaxClientsPerToken > 0 {
+		// First check with read lock
+		t.tokenClientsMutex.RLock()
+		currentClients := t.tokenClients[tokenStr]
+		t.tokenClientsMutex.RUnlock()
+
+		if currentClients >= t.MaxClientsPerToken {
+			httpError(t.Log, w, logTok, fmt.Sprintf("Maximum number of clients (%d) reached for this token", t.MaxClientsPerToken), 429)
+			return
+		}
+
+		// Now update with write lock
+		t.tokenClientsMutex.Lock()
+		// Re-check in case another goroutine incremented between locks
+		currentClients = t.tokenClients[tokenStr]
+		if currentClients >= t.MaxClientsPerToken {
+			t.tokenClientsMutex.Unlock()
+			httpError(t.Log, w, logTok, fmt.Sprintf("Maximum number of clients (%d) reached for this token", t.MaxClientsPerToken), 429)
+			return
+		}
+		t.tokenClients[tokenStr] = currentClients + 1
+		quotaReserved = true
+		t.tokenClientsMutex.Unlock()
+
+		// Set up rollback in case upgrade fails
+		defer func() {
+			if quotaReserved {
+				t.tokenClientsMutex.Lock()
+				t.tokenClients[tokenStr]--
+				if t.tokenClients[tokenStr] <= 0 {
+					delete(t.tokenClients, tokenStr)
+				}
+				t.tokenClientsMutex.Unlock()
+			}
+		}()
+	}
+
 	// Upgrade to web sockets
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  100 * 1024,
@@ -163,6 +203,9 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		httpError(t.Log, w, logTok, err.Error(), 400)
 		return
 	}
+
+	// Upgrade successful, don't rollback quota
+	quotaReserved = false
 	// Get/Create RemoteServer
 	rs := t.getRemoteServer(tokenStr, true)
 	rs.remoteAddr = addr
@@ -182,7 +225,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(rs, ws, ch)
+	go wsReader(t, rs, ws, ch, tokenStr)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
@@ -284,7 +327,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
+func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan int, tokenStr token) {
 	var err error
 	logToken := cutToken(rs.token)
 
@@ -344,6 +387,19 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	}
 	// close up shop
 	ch <- 0 // notify sender
+
+	// Cleanup: decrement client count for this token
+	if t.MaxClientsPerToken > 0 {
+		t.tokenClientsMutex.Lock()
+		if count, exists := t.tokenClients[tokenStr]; exists && count > 0 {
+			t.tokenClients[tokenStr] = count - 1
+			if t.tokenClients[tokenStr] == 0 {
+				delete(t.tokenClients, tokenStr)
+			}
+		}
+		t.tokenClientsMutex.Unlock()
+	}
+
 	time.Sleep(2 * time.Second)
 	if err := ws.Close(); err != nil {
 		rs.log.Error("Failed to close websocket", "err", err)
