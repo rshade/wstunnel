@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/rshade/wstunnel/testutil"
 )
 
@@ -15,4 +17,9 @@ func TestMain(m *testing.M) {
 
 	// Exit with the same code
 	os.Exit(exitCode)
+}
+
+func TestTunnel(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Tunnel Suite")
 }
