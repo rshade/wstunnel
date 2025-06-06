@@ -143,23 +143,11 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		t.Log.Info("Token authenticated without password", "token", logTok)
 	}
 
-	// Check max clients per token limit before upgrade
+	// Check max clients per token limit and reserve quota before upgrade
 	var quotaReserved bool
 	if t.MaxClientsPerToken > 0 {
-		// First check with read lock
-		t.tokenClientsMutex.RLock()
-		currentClients := t.tokenClients[tokenStr]
-		t.tokenClientsMutex.RUnlock()
-
-		if currentClients >= t.MaxClientsPerToken {
-			httpError(t.Log, w, logTok, fmt.Sprintf("Maximum number of clients (%d) reached for this token", t.MaxClientsPerToken), 429)
-			return
-		}
-
-		// Now update with write lock
 		t.tokenClientsMutex.Lock()
-		// Re-check in case another goroutine incremented between locks
-		currentClients = t.tokenClients[tokenStr]
+		currentClients := t.tokenClients[tokenStr]
 		if currentClients >= t.MaxClientsPerToken {
 			t.tokenClientsMutex.Unlock()
 			httpError(t.Log, w, logTok, fmt.Sprintf("Maximum number of clients (%d) reached for this token", t.MaxClientsPerToken), 429)
