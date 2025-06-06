@@ -2,7 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    "config:recommended",
     ":semanticCommits"
   ],
   "postUpdateOptions": [
@@ -76,7 +75,7 @@
     "automergeType": "pr"
   },
   "constraints": {
-    "go": "1.23"
+    "go": "1.24"
   },
   "ignoreDeps": [],
   "schedule": [
@@ -86,5 +85,11 @@
   "commitMessagePrefix": "chore(deps):",
   "prHourlyLimit": 5,
   "prConcurrentLimit": 5,
-  "branchConcurrentLimit": 3
+  "branchConcurrentLimit": 3,
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": true,
+  "rebaseWhen": "behind-base-branch",
+  "rebaseLabel": "rebase"
 }
