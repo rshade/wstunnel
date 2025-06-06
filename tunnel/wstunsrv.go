@@ -39,8 +39,8 @@ const tunnelInactiveKillTimeout = 60 * time.Minute // close dead tunnels
 //===== Data Structures =====
 
 const (
-	//maxReq max queued requests per remote server
-	maxReq = 20
+	//defaultMaxReq default max queued requests per remote server
+	defaultMaxReq = 20
 	//minTokenLen min number of chars in a token
 	minTokenLen = 16
 )
@@ -112,16 +112,20 @@ func (rs *remoteServer) getRemoteInfo() (name, whois string) {
 
 // WSTunnelServer a wstunnel server construct
 type WSTunnelServer struct {
-	Port                int                     // port to listen on
-	Host                string                  // host to listen on
-	WSTimeout           time.Duration           // timeout on websockets
-	HTTPTimeout         time.Duration           // timeout for HTTP requests
-	Log                 log15.Logger            // logger with "pkg=WStunsrv"
-	exitChan            chan struct{}           // channel to tell the tunnel goroutines to end
-	serverRegistry      map[token]*remoteServer // active remote servers indexed by token
-	serverRegistryMutex sync.Mutex              // mutex to protect map
-	tokenPasswords      map[token]string        // optional passwords for tokens
-	tokenPasswordsMutex sync.RWMutex            // mutex to protect password map
+	Port                 int                     // port to listen on
+	Host                 string                  // host to listen on
+	WSTimeout            time.Duration           // timeout on websockets
+	HTTPTimeout          time.Duration           // timeout for HTTP requests
+	MaxRequestsPerTunnel int                     // max queued requests per tunnel
+	MaxClientsPerToken   int                     // max clients allowed per token
+	Log                  log15.Logger            // logger with "pkg=WStunsrv"
+	exitChan             chan struct{}           // channel to tell the tunnel goroutines to end
+	serverRegistry       map[token]*remoteServer // active remote servers indexed by token
+	serverRegistryMutex  sync.Mutex              // mutex to protect map
+	tokenPasswords       map[token]string        // optional passwords for tokens
+	tokenPasswordsMutex  sync.RWMutex            // mutex to protect password map
+	tokenClients         map[token]int           // track number of clients per token
+	tokenClientsMutex    sync.RWMutex            // mutex to protect client count map
 }
 
 // name Lookups
@@ -149,6 +153,22 @@ func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 	return
 }
 
+// validateLimit validates and adjusts configuration limits
+func validateLimit(logger log15.Logger, name string, value, min, max, defaultValue int) int {
+	if value < min {
+		logger.Info("Configuration limit below minimum, using default", "param", name, "value", value, "min", min, "default", defaultValue)
+		return defaultValue
+	}
+	if value > max {
+		logger.Info("Configuration limit above maximum, using maximum", "param", name, "value", value, "max", max)
+		return max
+	}
+	if value > 100 {
+		logger.Info("Configuration limit is high", "param", name, "value", value, "recommended", "10-100")
+	}
+	return value
+}
+
 //===== Main =====
 
 // NewWSTunnelServer function to create wstunnel from cli
@@ -165,6 +185,8 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	var slog = srvFlag.String("syslog", "", "syslog facility to log to")
 	var whoTok = srvFlag.String("robowhois", "", "robowhois.com API token")
 	var tokenPass = srvFlag.String("passwords", "", "comma-separated list of token:password pairs")
+	srvFlag.IntVar(&wstunSrv.MaxRequestsPerTunnel, "max-requests-per-tunnel", defaultMaxReq, "maximum number of queued requests per tunnel (recommended: 10-100, max: 10000)")
+	srvFlag.IntVar(&wstunSrv.MaxClientsPerToken, "max-clients-per-token", 0, "maximum number of clients per token (0 for unlimited, recommended: 10-100, max: 10000)")
 
 	if err := srvFlag.Parse(args); err != nil {
 		wstunSrv.Log.Crit("Failed to parse server flags", "err", err)
@@ -175,6 +197,26 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 		wstunSrv.Log.Error("Failed to write pidfile", "err", err)
 	}
 	wstunSrv.Log = makeLogger("WStunsrv", *logf, *slog)
+
+	// Validate MaxRequestsPerTunnel
+	if wstunSrv.MaxRequestsPerTunnel < 0 {
+		wstunSrv.Log.Error("max-requests-per-tunnel cannot be negative, using default", "value", wstunSrv.MaxRequestsPerTunnel, "default", defaultMaxReq)
+		wstunSrv.MaxRequestsPerTunnel = defaultMaxReq
+	} else if wstunSrv.MaxRequestsPerTunnel == 0 {
+		// Treat 0 as unlimited by falling back to the default buffer size
+		wstunSrv.Log.Warn("max-requests-per-tunnel set to 0 – interpreting as unlimited (using default buffer size)", "default", defaultMaxReq)
+		wstunSrv.MaxRequestsPerTunnel = defaultMaxReq
+	} else if wstunSrv.MaxRequestsPerTunnel > 1000 {
+		wstunSrv.Log.Warn("max-requests-per-tunnel is very high, may cause resource issues", "value", wstunSrv.MaxRequestsPerTunnel, "recommended", "10-100 for typical use cases")
+	}
+
+	// Validate MaxClientsPerToken
+	if wstunSrv.MaxClientsPerToken < 0 {
+		wstunSrv.Log.Error("max-clients-per-token cannot be negative, disabling limit", "value", wstunSrv.MaxClientsPerToken)
+		wstunSrv.MaxClientsPerToken = 0
+	} else if wstunSrv.MaxClientsPerToken > 1000 {
+		wstunSrv.Log.Warn("max-clients-per-token is very high, may cause resource issues", "value", wstunSrv.MaxClientsPerToken)
+	}
 	wstunSrv.WSTimeout = calcWsTimeout(*tout)
 	cacheMutex.Lock()
 	whoToken = *whoTok
@@ -184,6 +226,9 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HTTPTimeout)
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
+
+	// Initialize token client count map
+	wstunSrv.tokenClients = make(map[token]int)
 
 	// Parse token passwords
 	wstunSrv.tokenPasswords = make(map[token]string)
@@ -330,6 +375,30 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		t.Log.Error("Failed to write response", "err", err)
 	}
 	t.serverRegistryMutex.Unlock()
+
+	// print configuration limits
+	if _, err := fmt.Fprintf(safeW, "max_requests_per_tunnel=%d\n", t.MaxRequestsPerTunnel); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
+	if _, err := fmt.Fprintf(safeW, "max_clients_per_token=%d\n", t.MaxClientsPerToken); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
+
+	// print current token client counts
+	if t.MaxClientsPerToken > 0 {
+		t.tokenClientsMutex.RLock()
+		totalClients := 0
+		for tok, count := range t.tokenClients {
+			if _, err := fmt.Fprintf(safeW, "token_clients_%s=%d\n", cutToken(tok), count); err != nil {
+				t.Log.Error("Failed to write response", "err", err)
+			}
+			totalClients += count
+		}
+		t.tokenClientsMutex.RUnlock()
+		if _, err := fmt.Fprintf(safeW, "total_clients=%d\n", totalClients); err != nil {
+			t.Log.Error("Failed to write response", "err", err)
+		}
+	}
 
 	// cut off here if not called from localhost
 	addr := r.Header.Get("X-Forwarded-For")
@@ -585,10 +654,15 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 	}
 
 	// construct new remote server
+	// Clamp MaxRequestsPerTunnel to prevent excessive memory allocation
+	maxRequests := t.MaxRequestsPerTunnel
+	if maxRequests > 1000 {
+		maxRequests = 1000
+	}
 	rs = &remoteServer{
 		token:        tok,
 		lastActivity: time.Now(),
-		requestQueue: make(chan *remoteRequest, maxReq),
+		requestQueue: make(chan *remoteRequest, maxRequests),
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          t.Log.New("token", cutToken(tok)),
 	}

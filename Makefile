@@ -46,7 +46,7 @@ endif
 
 # the default target builds a binary in the top-level dir for whatever the local OS is
 default: $(EXE)
-$(EXE): *.go version
+$(EXE): *.go
 	go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o $(EXE) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
@@ -55,7 +55,7 @@ build: depend $(EXE) build/$(NAME)-linux-amd64.tgz build/$(NAME)-windows-amd64.z
 
 # create a tgz with the binary and any artifacts that are necessary
 # note the hack to allow for various GOOS & GOARCH combos, sigh
-build/$(NAME)-%.tgz: *.go version depend
+build/$(NAME)-%.tgz: *.go depend
 	rm -rf build/$(NAME)
 	mkdir -p build/$(NAME)
 	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o build/$(NAME)/$(NAME) .
@@ -68,7 +68,7 @@ build/$(NAME)-%.tgz: *.go version depend
 	tar -zcf $@ -C build ./$(NAME)
 	rm -r build/$(NAME)
 
-build/$(NAME)-%.zip: *.go version depend
+build/$(NAME)-%.zip: *.go depend
 	mkdir -p build/$(NAME)
 	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -ldflags "-X 'main.VV=$(NAME)_$(TRAVIS_BRANCH)_$(DATE)_$(TRAVIS_COMMIT)'" -o build/$(NAME)/$(NAME).exe .
 	zip $@ build/$(NAME)/$(NAME).exe
@@ -101,12 +101,9 @@ upload: depend
 		fi; \
 	  done)
 
-# produce a version string that is embedded into the binary that captures the branch, the date
-# and the commit we're building
+# version target is now a no-op since we use ldflags to set VV
 version:
-	@echo "package main; const VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
-	  >version.go
-	@echo "version.go: `cat version.go`"
+	@echo "Version is set via ldflags: $(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)"
 
 # Installing build dependencies is a bit of a mess. Don't want to spend lots of time in
 # Travis doing this. The folllowing just relies on go get no reinstalling when it's already
@@ -115,7 +112,8 @@ depend:
 	go mod download
 
 clean:
-	@echo "package main; const VV = \"$(NAME) unversioned - $(DATE)\"" >version.go
+	rm -f $(EXE) version.go
+	rm -rf build/
 
 # gofmt uses the awkward *.go */*.go because gofmt -l . descends into the Godeps workspace
 # and then pointlessly complains about bad formatting in imported packages, sigh
@@ -129,6 +127,28 @@ lint:
 	  golangci-lint run; \
 	else \
 	  echo "golangci-lint not found, skipping"; \
+	fi
+	@if command -v yamllint > /dev/null; then \
+	  echo "Running yamllint..." && \
+	  yamllint --config-file .yamllint .github/workflows/ && \
+	  echo "✓ YAML files passed linting"; \
+	else \
+	  echo "yamllint not found, skipping. Install with: pip install yamllint"; \
+	fi
+
+# Auto-fix YAML files
+yamllint-fix:
+	@if command -v yamllint > /dev/null; then \
+	  echo "Checking YAML files for issues..." && \
+	  if ! yamllint .github/workflows/ > /dev/null 2>&1; then \
+	    echo "YAML linting issues detected. Note: yamllint doesn't have auto-fix capability." && \
+	    echo "Showing issues that need manual fixing:" && \
+	    yamllint .github/workflows/; \
+	  else \
+	    echo "✓ All YAML files are valid"; \
+	  fi \
+	else \
+	  echo "yamllint not found. Install with: pip install yamllint"; \
 	fi
 
 travis-test: lint

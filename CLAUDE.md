@@ -20,8 +20,9 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - `go test ./...` - Run all tests in the project
 
 ## Lint Commands
-- `make lint` - Run gofmt check and go vet
+- `make lint` - Run gofmt check, go vet, golangci-lint, and yamllint
 - `golangci-lint run` - Run comprehensive linting checks
+- `yamllint .github/workflows/` - Check YAML formatting in GitHub workflows
 
 ## Code Style Guidelines
 - **Formatting**: Use gofmt, tabs for indentation
@@ -53,6 +54,8 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - Port allocation uses `:0` to get random available ports
 - Use standard Go testing package with table-driven tests
 - Test files should be named `*_test.go` and placed alongside the code they test
+- **IMPORTANT**: Do NOT use Ginkgo/Gomega testing frameworks - use standard Go testing only
+- **NEVER** create or convert tests to use Ginkgo - always use the standard testing package
 
 ## Security Considerations
 - Tokens must be at least 16 characters
@@ -72,6 +75,13 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - WebSocket ping/pong failures often indicate network issues or proxy interference
 - Request timeouts can be tuned with `-timeout` flag (default 30s)
 
+## Configuration Options
+- **Max Requests Per Tunnel**: Use `-max-requests-per-tunnel N` to limit queued requests per tunnel (default: 20)
+- **Max Clients Per Token**: Use `-max-clients-per-token N` to limit concurrent clients per token (default: 0/unlimited)
+- When a tunnel reaches the max request limit, new requests return "too many requests in-flight, tunnel broken?"
+- When a token reaches the max client limit, new connections return HTTP 429 "Maximum number of clients reached"
+- Client counts are automatically decremented when clients disconnect
+
 ## CodeRabbit Review Settings
 The project uses CodeRabbit for automated code reviews (see `.coderabbit.yaml`). When writing code, ensure compliance with:
 - **Go conventions**: Use gofmt, organize imports (stdlib first), proper error handling
@@ -80,3 +90,11 @@ The project uses CodeRabbit for automated code reviews (see `.coderabbit.yaml`).
 - **Path-specific rules**: WebSocket code must follow patterns in tunnel/ws.go, use goroutine-per-request
 - **Excluded paths**: vendor/, build/, node_modules/, generated code, coverage.txt are not reviewed
 - CodeRabbit auto-approves dependency updates from Renovate and documentation-only changes
+
+## CodeRabbit Fix Tool
+Use `~/bin/coderabbit-fix` to automatically apply CodeRabbit suggestions:
+- `coderabbit-fix 153 --ai-format` - Generate AI-formatted prompts from PR 153
+- `coderabbit-fix 153` - Apply all fixes from PR 153
+- `coderabbit-fix 153 --dry-run` - Show what would be changed without applying
+- The tool extracts detailed instructions from CodeRabbit comments including "Prompt for AI Agents" sections
+- Always run `make lint` and `make test` after applying fixes to ensure code quality
