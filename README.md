@@ -103,6 +103,17 @@ WSTUNSRV RUNNING
 $
 ```
 
+When using a base path, the health check URL includes the base path:
+
+```bash
+$ ./wstunnel srv -port 8080 -base-path /wstunnel &
+2014/01/19 09:51:31 Listening on port 8080
+2014/01/19 09:51:31 Base path configured basePath=/wstunnel
+$ curl http://localhost:8080/wstunnel/_health_check
+WSTUNSRV RUNNING
+$
+```
+
 #### Server Configuration Options
 
 The WStunnel server supports several configuration options to control resource usage and security:
@@ -136,10 +147,26 @@ $ ./wstunnel srv -port 8080 -max-clients-per-token 1 &
 
 This is useful when you want to ensure only a single client instance per token is allowed, preventing unauthorized token sharing or connection conflicts.
 
+**Base Path Configuration:**
+When running behind a reverse proxy (like Envoy, Istio Ingress Gateway, or nginx) with path-based routing, use the `-base-path` option to specify the base path for all endpoints:
+
+```bash
+$ ./wstunnel srv -port 8080 -base-path /wstunnel &
+2024/01/19 09:51:31 Listening on port 8080
+2024/01/19 09:51:31 Base path configured basePath=/wstunnel
+```
+
+With a base path configured, all WStunnel endpoints become available under the specified path:
+- Health check: `http://proxy.example.com/wstunnel/_health_check`
+- Stats: `http://proxy.example.com/wstunnel/_stats`
+- Tunnel endpoint: `ws://proxy.example.com/wstunnel/_tunnel`
+- Token-based requests: `http://proxy.example.com/wstunnel/_token/your-token/path`
+
 **Combined Configuration Example:**
 
 ```bash
 $ ./wstunnel srv -port 8080 \
+  -base-path /api/v1/tunnel \
   -passwords 'prod-token:secure-password,dev-token:dev-pass' \
   -max-requests-per-tunnel 30 \
   -max-clients-per-token 2 &
@@ -161,10 +188,19 @@ $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -t
 2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 ```
 
+If the server is running with a base path (e.g., `-base-path /wstunnel`), include it in the tunnel URL:
+
+```bash
+$ ./wstunnel cli -tunnel ws://wstun.example.com:8080/wstunnel -server http://localhost -token 'my_b!g_$secret!!'
+2014/01/19 09:54:51 Opening ws://wstun.example.com/wstunnel/_tunnel
+```
+
 To use a token with a password for additional security:
 
 ```bash
 $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret!!:mypassword'
+# Or with base path:
+$ ./wstunnel cli -tunnel ws://wstun.example.com:8080/wstunnel -server http://localhost -token 'my_b!g_$secret!!:mypassword'
 ```
 
 > **Security Warning**: Passing passwords via command-line arguments is not recommended as they can be exposed through:
@@ -186,10 +222,18 @@ $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -t
 On `client.example.com` use curl to make a request to the web server running on `www.example.com`:
 
 ```bash
-
 $ curl 'https://wstun.example.com:8080/_token/my_b!g_$secret!!/some/web/page'
 <html> .......
 $ curl '-HX-Token:my_b!g_$secret!!' https://wstun.example.com:8080/some/web/page
+<html> .......
+```
+
+If the server is running with a base path, include it in the request URLs:
+
+```bash
+$ curl 'https://wstun.example.com:8080/wstunnel/_token/my_b!g_$secret!!/some/web/page'
+<html> .......
+$ curl '-HX-Token:my_b!g_$secret!!' https://wstun.example.com:8080/wstunnel/some/web/page
 <html> .......
 ```
 
@@ -270,7 +314,7 @@ server {
 
 ### Monitoring and Status Endpoint
 
-WStunnel server provides a `/_stats` endpoint that displays information about connected tunnels. When accessed from localhost, it provides detailed information including:
+WStunnel server provides a `/_stats` endpoint that displays information about connected tunnels (or `/your-base-path/_stats` when using a base path). When accessed from localhost, it provides detailed information including:
 
 - Number of active tunnels
 - Server configuration limits

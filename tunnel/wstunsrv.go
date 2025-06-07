@@ -114,6 +114,7 @@ func (rs *remoteServer) getRemoteInfo() (name, whois string) {
 type WSTunnelServer struct {
 	Port                 int                     // port to listen on
 	Host                 string                  // host to listen on
+	BasePath             string                  // base path for routing (e.g., "/wstunnel")
 	WSTimeout            time.Duration           // timeout on websockets
 	HTTPTimeout          time.Duration           // timeout for HTTP requests
 	MaxRequestsPerTunnel int                     // max queued requests per tunnel
@@ -178,6 +179,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
 	srvFlag.IntVar(&wstunSrv.Port, "port", 80, "port for http/ws server to listen on")
 	srvFlag.StringVar(&wstunSrv.Host, "host", "0.0.0.0", "host for http/ws server to listen on")
+	srvFlag.StringVar(&wstunSrv.BasePath, "base-path", "", "base path for routing when behind proxy (e.g., '/wstunnel')")
 	var pidf = srvFlag.String("pidfile", "", "path for pidfile")
 	var logf = srvFlag.String("logfile", "", "path for log file")
 	var tout = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
@@ -197,6 +199,12 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 		wstunSrv.Log.Error("Failed to write pidfile", "err", err)
 	}
 	wstunSrv.Log = makeLogger("WStunsrv", *logf, *slog)
+
+	// Normalize base path
+	wstunSrv.BasePath = normalizeBasePath(wstunSrv.BasePath)
+	if wstunSrv.BasePath != "" {
+		wstunSrv.Log.Info("Base path configured", "basePath", wstunSrv.BasePath)
+	}
 
 	// Validate MaxRequestsPerTunnel
 	if wstunSrv.MaxRequestsPerTunnel < 0 {
@@ -290,17 +298,26 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	// Convert a handler that takes a tunnel as first arg to a std http handler
 	wrap := func(h func(t *WSTunnelServer, w http.ResponseWriter, r *http.Request)) func(http.ResponseWriter, *http.Request) {
 		return func(w http.ResponseWriter, r *http.Request) {
+			// Strip base path from request URL if configured
+			if t.BasePath != "" && shouldStripBasePath(r.URL.Path, t.BasePath) {
+				// Create a new URL with the base path stripped
+				newPath := strings.TrimPrefix(r.URL.Path, t.BasePath)
+				if newPath == "" {
+					newPath = "/"
+				}
+				r.URL.Path = newPath
+			}
 			h(t, w, r)
 		}
 	}
 
-	// Reqister handlers with default mux
+	// Register handlers with default mux
 	httpMux := http.NewServeMux()
-	httpMux.HandleFunc("/", wrap(payloadHeaderHandler))
-	httpMux.HandleFunc("/_token/", wrap(payloadPrefixHandler))
-	httpMux.HandleFunc("/_tunnel", wrap(tunnelHandler))
-	httpMux.HandleFunc("/_health_check", wrap(checkHandler))
-	httpMux.HandleFunc("/_stats", wrap(statsHandler))
+	httpMux.HandleFunc(buildPath(t.BasePath, "/"), wrap(payloadHeaderHandler))
+	httpMux.HandleFunc(buildPath(t.BasePath, "/_token/"), wrap(payloadPrefixHandler))
+	httpMux.HandleFunc(buildPath(t.BasePath, "/_tunnel"), wrap(tunnelHandler))
+	httpMux.HandleFunc(buildPath(t.BasePath, "/_health_check"), wrap(checkHandler))
+	httpMux.HandleFunc(buildPath(t.BasePath, "/_stats"), wrap(statsHandler))
 	httpServer.Handler = httpMux
 	//httpServer.ErrorLog = log15Logger // would like to set this somehow...
 
@@ -631,6 +648,72 @@ func tunnelHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 }
 
 //===== Helpers =====
+
+// normalizeBasePath normalizes a base path for HTTP routing
+// Ensures proper leading slash and removes trailing slash (except for root)
+func normalizeBasePath(basePath string) string {
+	// Handle empty string
+	if basePath == "" {
+		return ""
+	}
+
+	// Trim whitespace
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		return ""
+	}
+
+	// Ensure it starts with "/"
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+
+	// Special case: if basePath consists only of slashes, return "/"
+	if strings.Trim(basePath, "/") == "" {
+		return "/"
+	}
+
+	// Remove trailing slashes
+	basePath = strings.TrimRight(basePath, "/")
+
+	return basePath
+}
+
+// buildPath builds a full path by joining the base path with a route path
+func buildPath(basePath, routePath string) string {
+	if basePath == "" {
+		return routePath
+	}
+	if routePath == "/" {
+		return basePath + "/"
+	}
+	return basePath + routePath
+}
+
+// shouldStripBasePath determines if a request path should have the base path stripped
+// It ensures the base path is followed by "/" or is at the end of the path
+func shouldStripBasePath(requestPath, basePath string) bool {
+	// Empty base path or root base path should never be stripped
+	if basePath == "" || basePath == "/" {
+		return false
+	}
+
+	if !strings.HasPrefix(requestPath, basePath) {
+		return false
+	}
+
+	// If exact match, should strip
+	if requestPath == basePath {
+		return true
+	}
+
+	// If base path is followed by "/", should strip
+	if len(requestPath) > len(basePath) && requestPath[len(basePath)] == '/' {
+		return true
+	}
+
+	return false
+}
 
 // Sanitize the token for logging
 func cutToken(tok token) string {

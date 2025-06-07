@@ -78,9 +78,11 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 ## Configuration Options
 - **Max Requests Per Tunnel**: Use `-max-requests-per-tunnel N` to limit queued requests per tunnel (default: 20)
 - **Max Clients Per Token**: Use `-max-clients-per-token N` to limit concurrent clients per token (default: 0/unlimited)
+- **Base Path**: Use `-base-path /path` to run behind reverse proxies with path-based routing (e.g., `-base-path /wstunnel`)
 - When a tunnel reaches the max request limit, new requests return "too many requests in-flight, tunnel broken?"
 - When a token reaches the max client limit, new connections return HTTP 429 "Maximum number of clients reached"
 - Client counts are automatically decremented when clients disconnect
+- Base path configuration automatically prefixes all endpoints (/_tunnel, /_health_check, /_stats, /_token/) with the specified path
 
 ## CodeRabbit Review Settings
 The project uses CodeRabbit for automated code reviews (see `.coderabbit.yaml`). When writing code, ensure compliance with:
