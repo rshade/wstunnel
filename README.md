@@ -358,6 +358,112 @@ The configuration limits section shows:
 
 Note: Full statistics are only available when the endpoint is accessed from localhost. Remote requests will only see the total number of tunnels.
 
+### Admin API Endpoints
+
+WStunnel server provides two JSON API endpoints for programmatic monitoring and auditing:
+
+#### `/admin/monitoring` - Aggregate Statistics
+
+Returns high-level statistics in JSON format, suitable for monitoring dashboards and alerting systems.
+
+**Example Request:**
+```bash
+curl http://localhost:8080/admin/monitoring
+# With base path:
+curl http://localhost:8080/wstunnel/admin/monitoring
+```
+
+**Example Response:**
+```json
+{
+  "timestamp": "2025-01-09T15:30:45Z",
+  "unique_tunnels": 3,
+  "tunnel_connections": 3,
+  "pending_requests": 5,
+  "completed_requests": 1247,
+  "errored_requests": 23
+}
+```
+
+**Fields:**
+- `unique_tunnels`: Number of unique tunnel tokens registered
+- `tunnel_connections`: Number of active tunnel connections
+- `pending_requests`: Current number of requests waiting for response
+- `completed_requests`: Total successful requests since server start
+- `errored_requests`: Total failed requests since server start
+
+#### `/admin/auditing` - Detailed Tunnel Information
+
+Returns comprehensive details about all active tunnels and their connections, suitable for security auditing and detailed analysis.
+
+**Example Request:**
+```bash
+curl http://localhost:8080/admin/auditing
+# With base path:
+curl http://localhost:8080/wstunnel/admin/auditing
+```
+
+**Example Response:**
+```json
+{
+  "timestamp": "2025-01-09T15:30:45Z",
+  "tunnels": {
+    "my_secret_token": {
+      "token": "my_secret_token",
+      "remote_addr": "192.168.1.100:54321",
+      "remote_name": "client.example.com",
+      "remote_whois": "Example Corp",
+      "client_version": "wstunnel v1.0.0",
+      "last_activity": "2025-01-09T15:30:40Z",
+      "active_connections": [
+        {
+          "request_id": 123,
+          "method": "GET",
+          "uri": "/api/data",
+          "remote_addr": "10.0.0.5",
+          "start_time": "2025-01-09T15:30:30Z"
+        }
+      ],
+      "last_error_time": "2025-01-09T15:25:00Z",
+      "last_error_addr": "10.0.0.3",
+      "last_success_time": "2025-01-09T15:30:35Z",
+      "last_success_addr": "10.0.0.5",
+      "pending_requests": 1
+    }
+  }
+}
+```
+
+**Tunnel Fields:**
+- `token`: The tunnel token (first 8 characters shown in logs)
+- `remote_addr`: IP address and port of the tunnel client
+- `remote_name`: Reverse DNS lookup of the client IP
+- `remote_whois`: WHOIS information for the client IP (if available)
+- `client_version`: Version string reported by the tunnel client
+- `last_activity`: Timestamp of last tunnel activity
+- `active_connections`: Array of currently active HTTP requests
+- `last_error_time`: Timestamp of most recent failed request (optional)
+- `last_error_addr`: IP address of most recent failed request (optional)
+- `last_success_time`: Timestamp of most recent successful request (optional)
+- `last_success_addr`: IP address of most recent successful request (optional)
+- `pending_requests`: Number of requests currently pending
+
+**Active Connection Fields:**
+- `request_id`: Unique identifier for the request
+- `method`: HTTP method (GET, POST, etc.)
+- `uri`: The requested URI path
+- `remote_addr`: IP address of the client making the request
+- `start_time`: When the request was initiated
+
+**Use Cases:**
+- **Monitoring**: Use `/admin/monitoring` for dashboards, alerting, and performance tracking
+- **Security Auditing**: Use `/admin/auditing` to track which clients are connecting from where
+- **Debugging**: Use `/admin/auditing` to see active requests and recent errors
+- **Capacity Planning**: Monitor request volumes and tunnel usage patterns
+- **Web UI Integration**: Both endpoints return JSON suitable for web-based admin interfaces
+
+**Security Note:** These endpoints are accessible without authentication. In production environments, consider placing them behind a reverse proxy with appropriate access controls.
+
 ### Reading wstunnel server logs
 
 Sample:

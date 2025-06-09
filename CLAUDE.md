@@ -19,10 +19,15 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - `go test -run="<test name>" ./tunnel` - Run a single test
 - `go test ./...` - Run all tests in the project
 
+## Format Commands
+- `make format` - Format all Go files with gofmt
+
 ## Lint Commands
 - `make lint` - Run gofmt check, go vet, golangci-lint, and yamllint
 - `golangci-lint run` - Run comprehensive linting checks
 - `yamllint .github/workflows/` - Check YAML formatting in GitHub workflows
+
+**IMPORTANT** Always run `make format`, `make lint`, and `make test` after making code changes
 
 ## Code Style Guidelines
 - **Formatting**: Use gofmt, tabs for indentation
@@ -99,4 +104,4 @@ Use `~/bin/coderabbit-fix` to automatically apply CodeRabbit suggestions:
 - `coderabbit-fix 153` - Apply all fixes from PR 153
 - `coderabbit-fix 153 --dry-run` - Show what would be changed without applying
 - The tool extracts detailed instructions from CodeRabbit comments including "Prompt for AI Agents" sections
-- Always run `make lint` and `make test` after applying fixes to ensure code quality
+- Always run `make format`, `make lint` and `make test` after applying fixes to ensure code quality

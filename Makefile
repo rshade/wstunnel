@@ -151,6 +151,12 @@ yamllint-fix:
 	  echo "yamllint not found. Install with: pip install yamllint"; \
 	fi
 
+# Format all Go files
+format:
+	@echo "Formatting Go files..."
+	gofmt -w $(shell find . -type f -not -path './.*' -not -path './vendor/*' -not -name 'version.go' -name '*.go')
+	@echo "✓ All .go files formatted"
+
 travis-test: lint
 	go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
