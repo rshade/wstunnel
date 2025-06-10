@@ -45,8 +45,8 @@ reviews:
     gitleaks:
       enabled: true
 
-  # Review profile - use assertive for thorough reviews
-  profile: "assertive"
+  # Review profile - use chill for balanced reviews
+  profile: "chill"
 
   # Path filters - exclude certain paths from review
   path_filters:

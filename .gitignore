@@ -40,3 +40,5 @@ build/
 **/.claude/settings.local.json
 PR_MESSAGE.md
 TEST-INSTRUCTIONS.md
+coverage.*
+node_modules/

@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WStunnel Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #4fc3f7;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .refresh-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+
+        .refresh-controls label {
+            color: #888;
+        }
+
+        .refresh-controls select,
+        .refresh-controls button {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .refresh-controls button:hover {
+            background: #3a3a3a;
+            cursor: pointer;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-online { background: #4caf50; }
+        .status-offline { background: #f44336; }
+        .status-loading { background: #ff9800; animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .metric {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #4fc3f7;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric-change {
+            font-size: 10px;
+            margin-top: 5px;
+        }
+
+        .metric-change.positive { color: #4caf50; }
+        .metric-change.negative { color: #f44336; }
+
+        .search-filter {
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px 15px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #e0e0e0;
+            border-radius: 5px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #4fc3f7;
+        }
+
+        .search-box::placeholder {
+            color: #666;
+        }
+
+        .tunnels-section {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: #2a2a2a;
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+            font-size: 16px;
+            font-weight: bold;
+            color: #4fc3f7;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .tunnels-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .tunnels-table th,
+        .tunnels-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+            white-space: nowrap;
+        }
+
+        .tunnels-table th {
+            background: #2a2a2a;
+            color: #888;
+            font-weight: normal;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 11px;
+        }
+
+        .tunnels-table tr:hover {
+            background: #222;
+        }
+
+        .token-cell {
+            font-family: 'Courier New', monospace;
+            color: #4fc3f7;
+        }
+
+        .status-active { color: #4caf50; }
+        .status-idle { color: #ff9800; }
+        .status-inactive { color: #888; }
+        .status-error { color: #f44336; }
+
+        .connections-count {
+            background: #2a2a2a;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            color: #4fc3f7;
+        }
+
+        .error-banner {
+            background: #3a1a1a;
+            border: 1px solid #f44336;
+            color: #f44336;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+            text-align: center;
+            color: #666;
+            font-size: 11px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 10px;
+            }
+            
+            .metric {
+                padding: 15px;
+            }
+            
+            .metric-value {
+                font-size: 24px;
+            }
+            
+            .refresh-controls {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WStunnel Admin Dashboard</h1>
+            <div class="subtitle">
+                <span class="status-indicator" id="connection-status"></span>
+                <span id="connection-text">Connecting...</span>
+                <span id="last-update"></span>
+            </div>
+        </div>
+
+        <div class="refresh-controls">
+            <label for="refresh-interval">Refresh:</label>
+            <select id="refresh-interval">
+                <option value="5000">5 seconds</option>
+                <option value="10000">10 seconds</option>
+                <option value="30000">30 seconds</option>
+                <option value="60000">1 minute</option>
+                <option value="0">Manual</option>
+            </select>
+            <button id="refresh-now" onclick="fetchData()">Refresh Now</button>
+            <button id="toggle-auto" onclick="toggleAutoRefresh()">Pause</button>
+        </div>
+
+        <div id="error-banner" class="error-banner">
+            <strong>Connection Error:</strong> <span id="error-message"></span>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric">
+                <div class="metric-value" id="unique_tunnels">-</div>
+                <div class="metric-label">Active Tunnels</div>
+                <div class="metric-change" id="tunnels_change"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="tunnel_connections">-</div>
+                <div class="metric-label">Connections</div>
+                <div class="metric-change" id="connections_change"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="pending_requests">-</div>
+                <div class="metric-label">Pending</div>
+                <div class="metric-change" id="pending_change"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="completed_requests">-</div>
+                <div class="metric-label">Completed</div>
+                <div class="metric-change" id="completed_change"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="errored_requests">-</div>
+                <div class="metric-label">Errors</div>
+                <div class="metric-change" id="errors_change"></div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="success_rate">-</div>
+                <div class="metric-label">Success Rate</div>
+                <div class="metric-change" id="rate_change"></div>
+            </div>
+        </div>
+
+        <div class="search-filter">
+            <input type="text" class="search-box" id="search" placeholder="Search by token, IP address, or hostname...">
+        </div>
+
+        <div class="tunnels-section">
+            <div class="section-header">
+                Active Tunnels (<span id="tunnel-count">0</span>)
+            </div>
+            <div class="table-container">
+                <table class="tunnels-table">
+                    <thead>
+                        <tr>
+                            <th>Token</th>
+                            <th>Remote Address</th>
+                            <th>Hostname</th>
+                            <th>Version</th>
+                            <th>Connections</th>
+                            <th>Pending</th>
+                            <th>Last Activity</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tunnels-body">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+                <div id="empty-state" class="empty-state" style="display: none;">
+                    <div class="icon">🚇</div>
+                    <div>No active tunnels found</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            WStunnel Admin Dashboard • Last updated: <span id="footer-timestamp">Never</span>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const REFRESH_INTERVALS = {
+            5000: 5 * 1000,
+            10000: 10 * 1000,
+            30000: 30 * 1000,
+            60000: 60 * 1000,
+            0: 0
+        };
+
+        // State
+        let refreshInterval = 5000;
+        let autoRefreshEnabled = true;
+        let refreshTimer = null;
+        let lastData = {};
+        let connectionRetryCount = 0;
+        const maxRetries = 3;
+
+        // DOM Elements
+        const elements = {
+            connectionStatus: document.getElementById('connection-status'),
+            connectionText: document.getElementById('connection-text'),
+            lastUpdate: document.getElementById('last-update'),
+            refreshSelect: document.getElementById('refresh-interval'),
+            toggleButton: document.getElementById('toggle-auto'),
+            errorBanner: document.getElementById('error-banner'),
+            errorMessage: document.getElementById('error-message'),
+            search: document.getElementById('search'),
+            tunnelsBody: document.getElementById('tunnels-body'),
+            emptyState: document.getElementById('empty-state'),
+            tunnelCount: document.getElementById('tunnel-count'),
+            footerTimestamp: document.getElementById('footer-timestamp')
+        };
+
+        // Initialize
+        function init() {
+            elements.refreshSelect.value = refreshInterval;
+            elements.refreshSelect.addEventListener('change', handleRefreshIntervalChange);
+            elements.search.addEventListener('input', handleSearch);
+            
+            // Initial data fetch
+            fetchData();
+            
+            // Start auto-refresh
+            if (autoRefreshEnabled && refreshInterval > 0) {
+                startAutoRefresh();
+            }
+        }
+
+        // Update connection status
+        function updateConnectionStatus(status, message) {
+            elements.connectionStatus.className = `status-indicator status-${status}`;
+            elements.connectionText.textContent = message;
+            
+            if (status === 'online') {
+                elements.errorBanner.style.display = 'none';
+                connectionRetryCount = 0;
+            } else if (status === 'offline') {
+                showError(message);
+            }
+        }
+
+        // Show error message
+        function showError(message) {
+            elements.errorMessage.textContent = message;
+            elements.errorBanner.style.display = 'block';
+        }
+
+        // Fetch data from API
+        async function fetchData() {
+            updateConnectionStatus('loading', 'Loading...');
+            
+            try {
+                // Fetch monitoring data
+                const monitoringResponse = await fetch(getApiPath('/admin/monitoring'));
+                if (!monitoringResponse.ok) {
+                    throw new Error(`HTTP ${monitoringResponse.status}: ${monitoringResponse.statusText}`);
+                }
+                const monitoring = await monitoringResponse.json();
+                
+                // Fetch auditing data
+                const auditingResponse = await fetch(getApiPath('/admin/auditing'));
+                if (!auditingResponse.ok) {
+                    throw new Error(`HTTP ${auditingResponse.status}: ${auditingResponse.statusText}`);
+                }
+                const auditing = await auditingResponse.json();
+                
+                // Update UI
+                updateMetrics(monitoring);
+                updateTunnelsTable(auditing.tunnels);
+                updateTimestamp();
+                
+                updateConnectionStatus('online', 'Connected');
+                
+            } catch (error) {
+                console.error('Failed to fetch data:', error);
+                connectionRetryCount++;
+                
+                if (connectionRetryCount <= maxRetries) {
+                    updateConnectionStatus('offline', `Connection failed (${connectionRetryCount}/${maxRetries})`);
+                    // Retry after a delay
+                    setTimeout(fetchData, 2000 * connectionRetryCount);
+                } else {
+                    updateConnectionStatus('offline', 'Connection failed - retries exhausted');
+                }
+            }
+        }
+
+        // Get API path (handles base path)
+        function getApiPath(endpoint) {
+            const basePath = window.location.pathname.replace(/\/admin\/ui\/?.*$/, '');
+            return basePath + endpoint;
+        }
+
+        // Update metrics display
+        function updateMetrics(data) {
+            // Calculate success rate
+            const total = data.completed_requests + data.errored_requests;
+            const successRate = total > 0 ? ((data.completed_requests / total) * 100).toFixed(1) : 0;
+            
+            // Update values
+            const metrics = {
+                unique_tunnels: data.unique_tunnels,
+                tunnel_connections: data.tunnel_connections,
+                pending_requests: data.pending_requests,
+                completed_requests: data.completed_requests,
+                errored_requests: data.errored_requests,
+                success_rate: successRate + '%'
+            };
+            
+            Object.entries(metrics).forEach(([key, value]) => {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.textContent = typeof value === 'number' ? value.toLocaleString() : value;
+                }
+            });
+            
+            // Show changes from last update
+            if (lastData.monitoring) {
+                showMetricChanges(data, lastData.monitoring);
+            }
+            
+            lastData.monitoring = data;
+        }
+
+        // Show metric changes
+        function showMetricChanges(current, previous) {
+            const changes = [
+                ['tunnels_change', current.unique_tunnels - previous.unique_tunnels],
+                ['connections_change', current.tunnel_connections - previous.tunnel_connections],
+                ['pending_change', current.pending_requests - previous.pending_requests],
+                ['completed_change', current.completed_requests - previous.completed_requests],
+                ['errors_change', current.errored_requests - previous.errored_requests]
+            ];
+            
+            changes.forEach(([elementId, change]) => {
+                const element = document.getElementById(elementId);
+                if (element && change !== 0) {
+                    element.textContent = change > 0 ? `+${change}` : change.toString();
+                    element.className = `metric-change ${change > 0 ? 'positive' : 'negative'}`;
+                } else if (element) {
+                    element.textContent = '';
+                    element.className = 'metric-change';
+                }
+            });
+        }
+
+        // Update tunnels table
+        function updateTunnelsTable(tunnels) {
+            const searchTerm = elements.search.value.toLowerCase().trim();
+            const tbody = elements.tunnelsBody;
+            const filteredTunnels = Object.entries(tunnels).filter(([token, tunnel]) => 
+                matchesSearch(tunnel, searchTerm)
+            );
+            
+            // Clear existing rows
+            tbody.innerHTML = '';
+            
+            if (filteredTunnels.length === 0) {
+                elements.emptyState.style.display = 'block';
+                tbody.parentElement.style.display = 'none';
+            } else {
+                elements.emptyState.style.display = 'none';
+                tbody.parentElement.style.display = 'table';
+                
+                // Sort by last activity (most recent first)
+                filteredTunnels.sort(([,a], [,b]) => 
+                    new Date(b.last_activity) - new Date(a.last_activity)
+                );
+                
+                filteredTunnels.forEach(([token, tunnel]) => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td class="token-cell">${truncateToken(tunnel.token)}</td>
+                        <td>${escapeHtml(tunnel.remote_addr)}</td>
+                        <td>${escapeHtml(tunnel.remote_name || '-')}</td>
+                        <td>${escapeHtml(tunnel.client_version || '-')}</td>
+                        <td><span class="connections-count">${tunnel.active_connections.length}</span></td>
+                        <td>${tunnel.pending_requests}</td>
+                        <td>${formatTimeAgo(tunnel.last_activity)}</td>
+                        <td class="${getStatusClass(tunnel)}">${getStatus(tunnel)}</td>
+                    `;
+                });
+            }
+            
+            elements.tunnelCount.textContent = filteredTunnels.length;
+        }
+
+        // Search functionality
+        function matchesSearch(tunnel, searchTerm) {
+            if (!searchTerm) return true;
+            
+            const searchIn = [
+                tunnel.token,
+                tunnel.remote_addr,
+                tunnel.remote_name || '',
+                tunnel.client_version || ''
+            ].map(s => s.toLowerCase());
+            
+            return searchIn.some(field => field.includes(searchTerm));
+        }
+
+        function handleSearch() {
+            if (lastData.auditing) {
+                updateTunnelsTable(lastData.auditing.tunnels);
+            }
+        }
+
+        // Utility functions
+        function truncateToken(token) {
+            return token.length > 12 ? token.substring(0, 8) + '...' : token;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTimeAgo(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffSeconds = Math.floor((now - date) / 1000);
+            
+            if (diffSeconds < 60) return `${diffSeconds}s ago`;
+            if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+            if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+            return `${Math.floor(diffSeconds / 86400)}d ago`;
+        }
+
+        function getStatus(tunnel) {
+            const lastActivity = new Date(tunnel.last_activity);
+            const now = new Date();
+            const diffMinutes = (now - lastActivity) / 60000;
+            
+            // Check for recent errors
+            if (tunnel.last_error_time) {
+                const lastError = new Date(tunnel.last_error_time);
+                if (lastError > lastActivity || diffMinutes < 5) {
+                    return 'Error';
+                }
+            }
+            
+            if (diffMinutes < 1) return 'Active';
+            if (diffMinutes < 5) return 'Idle';
+            return 'Inactive';
+        }
+
+        function getStatusClass(tunnel) {
+            const status = getStatus(tunnel).toLowerCase();
+            return `status-${status}`;
+        }
+
+        function updateTimestamp() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            elements.lastUpdate.textContent = ` • Last updated: ${timeString}`;
+            elements.footerTimestamp.textContent = timeString;
+        }
+
+        // Auto-refresh controls
+        function handleRefreshIntervalChange() {
+            refreshInterval = parseInt(elements.refreshSelect.value);
+            
+            if (autoRefreshEnabled) {
+                stopAutoRefresh();
+                if (refreshInterval > 0) {
+                    startAutoRefresh();
+                }
+            }
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval > 0) {
+                refreshTimer = setInterval(fetchData, refreshInterval);
+            }
+        }
+
+        function stopAutoRefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        }
+
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            elements.toggleButton.textContent = autoRefreshEnabled ? 'Pause' : 'Resume';
+            
+            if (autoRefreshEnabled && refreshInterval > 0) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        }
+
+        // Start the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

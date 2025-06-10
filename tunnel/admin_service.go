@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ type AdminService struct {
 	log    log15.Logger
 	mu     sync.RWMutex
 	done   chan struct{}
+	wg     sync.WaitGroup
 }
 
 // TunnelDetail provides detailed tunnel information for auditing
@@ -91,6 +93,20 @@ type TunnelEvent struct {
 	Details       string    `json:"details,omitempty"`
 }
 
+// APIDocsResponse represents the JSON response for /admin/api-docs
+type APIDocsResponse struct {
+	Version   string        `json:"version"`
+	Endpoints []APIEndpoint `json:"endpoints"`
+}
+
+// APIEndpoint represents a single API endpoint documentation
+type APIEndpoint struct {
+	Path        string                 `json:"path"`
+	Method      string                 `json:"method"`
+	Description string                 `json:"description"`
+	Response    map[string]interface{} `json:"response"`
+}
+
 // NewAdminService creates a new admin service with SQLite tracking
 func NewAdminService(server *WSTunnelServer, dbPath string) (*AdminService, error) {
 	db, err := sql.Open("sqlite", dbPath)
@@ -113,6 +129,7 @@ func NewAdminService(server *WSTunnelServer, dbPath string) (*AdminService, erro
 	}
 
 	// Start cleanup goroutine
+	service.wg.Add(1)
 	go service.cleanupOldRecords()
 
 	return service, nil
@@ -122,8 +139,8 @@ func NewAdminService(server *WSTunnelServer, dbPath string) (*AdminService, erro
 func (as *AdminService) Close() error {
 	// Signal cleanup goroutine to stop
 	close(as.done)
-	// Give it time to finish current operation
-	time.Sleep(100 * time.Millisecond)
+	// Wait for cleanup goroutine to finish
+	as.wg.Wait()
 	return as.db.Close()
 }
 
@@ -162,7 +179,7 @@ func (as *AdminService) initDB() error {
 	}
 
 	for _, query := range queries {
-		if _, err := as.db.Exec(query); err != nil {
+		if _, err := as.db.ExecContext(context.Background(), query); err != nil {
 			return fmt.Errorf("failed to execute schema query: %w", err)
 		}
 	}
@@ -171,7 +188,7 @@ func (as *AdminService) initDB() error {
 }
 
 // RecordRequestStart records the start of a request
-func (as *AdminService) RecordRequestStart(token, method, uri, remoteAddr string) (int64, error) {
+func (as *AdminService) RecordRequestStart(ctx context.Context, token, method, uri, remoteAddr string) (int64, error) {
 	// Validate inputs
 	if token == "" || method == "" || uri == "" {
 		return 0, fmt.Errorf("token, method, and uri are required")
@@ -183,7 +200,7 @@ func (as *AdminService) RecordRequestStart(token, method, uri, remoteAddr string
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	result, err := as.db.Exec(`
+	result, err := as.db.ExecContext(ctx, `
 		INSERT INTO request_events (token, method, uri, remote_addr, status, start_time)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, token, method, uri, remoteAddr, "pending", time.Now())
@@ -196,7 +213,7 @@ func (as *AdminService) RecordRequestStart(token, method, uri, remoteAddr string
 }
 
 // RecordRequestComplete records the completion of a request
-func (as *AdminService) RecordRequestComplete(requestID int64, success bool, errorMsg string) error {
+func (as *AdminService) RecordRequestComplete(ctx context.Context, requestID int64, success bool, errorMsg string) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
@@ -205,21 +222,40 @@ func (as *AdminService) RecordRequestComplete(requestID int64, success bool, err
 		status = "errored"
 	}
 
-	_, err := as.db.Exec(`
+	result, err := as.db.ExecContext(ctx, `
 		UPDATE request_events 
 		SET status = ?, end_time = ?, error = ?
 		WHERE id = ?
 	`, status, time.Now(), errorMsg, requestID)
+	if err != nil {
+		return err
+	}
 
-	return err
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("request ID %d not found", requestID)
+	}
+
+	return nil
 }
 
 // RecordTunnelEvent records a tunnel lifecycle event
-func (as *AdminService) RecordTunnelEvent(token, event, remoteAddr, remoteName, remoteWhois, clientVersion, details string) error {
+func (as *AdminService) RecordTunnelEvent(ctx context.Context, token, event, remoteAddr, remoteName, remoteWhois, clientVersion, details string) error {
+	// Validate inputs
+	if token == "" || event == "" {
+		return fmt.Errorf("token and event are required")
+	}
+	if len(token) > 255 || len(event) > 50 || len(details) > 1000 {
+		return fmt.Errorf("input exceeds maximum length")
+	}
+
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	_, err := as.db.Exec(`
+	_, err := as.db.ExecContext(ctx, `
 		INSERT INTO tunnel_events (token, event, remote_addr, remote_name, remote_whois, client_version, timestamp, details)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, token, event, remoteAddr, remoteName, remoteWhois, clientVersion, time.Now(), details)
@@ -228,7 +264,7 @@ func (as *AdminService) RecordTunnelEvent(token, event, remoteAddr, remoteName, 
 }
 
 // GetMonitoringStats returns monitoring statistics
-func (as *AdminService) GetMonitoringStats() (*MonitoringResponse, error) {
+func (as *AdminService) GetMonitoringStats(ctx context.Context) (*MonitoringResponse, error) {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
@@ -248,16 +284,19 @@ func (as *AdminService) GetMonitoringStats() (*MonitoringResponse, error) {
 	// Get request statistics from database
 	var pendingRequests, completedRequests, erroredRequests int64
 
-	if err := as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE status = 'pending'").Scan(&pendingRequests); err != nil {
-		as.log.Warn("Failed to get pending requests count", "err", err)
+	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'pending'").Scan(&pendingRequests); err != nil {
+		as.log.Error("Failed to get pending requests count", "err", err)
+		return nil, fmt.Errorf("failed to get pending requests count: %w", err)
 	}
 
-	if err := as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE status = 'completed'").Scan(&completedRequests); err != nil {
-		as.log.Warn("Failed to get completed requests count", "err", err)
+	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'completed'").Scan(&completedRequests); err != nil {
+		as.log.Error("Failed to get completed requests count", "err", err)
+		return nil, fmt.Errorf("failed to get completed requests count: %w", err)
 	}
 
-	if err := as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE status = 'errored'").Scan(&erroredRequests); err != nil {
-		as.log.Warn("Failed to get errored requests count", "err", err)
+	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'errored'").Scan(&erroredRequests); err != nil {
+		as.log.Error("Failed to get errored requests count", "err", err)
+		return nil, fmt.Errorf("failed to get errored requests count: %w", err)
 	}
 
 	return &MonitoringResponse{
@@ -271,7 +310,7 @@ func (as *AdminService) GetMonitoringStats() (*MonitoringResponse, error) {
 }
 
 // GetAuditingData returns detailed auditing information
-func (as *AdminService) GetAuditingData() (*AuditingResponse, error) {
+func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse, error) {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
@@ -310,25 +349,25 @@ func (as *AdminService) GetAuditingData() (*AuditingResponse, error) {
 		var lastErrorAddr, lastSuccessAddr string
 
 		// Get last error
-		err := as.db.QueryRow(`
+		err := as.db.QueryRowContext(ctx, `
 			SELECT start_time, remote_addr 
 			FROM request_events 
 			WHERE token = ? AND status = 'errored' 
 			ORDER BY start_time DESC LIMIT 1
 		`, string(tokenStr)).Scan(&lastErrorTime, &lastErrorAddr)
 		if err != nil && err != sql.ErrNoRows {
-			as.log.Warn("Failed to get last error time", "token", cutToken(tokenStr), "err", err)
+			as.log.Error("Failed to query last error time", "token", cutToken(tokenStr), "err", err)
 		}
 
 		// Get last success
-		err = as.db.QueryRow(`
+		err = as.db.QueryRowContext(ctx, `
 			SELECT end_time, remote_addr 
 			FROM request_events 
 			WHERE token = ? AND status = 'completed' 
 			ORDER BY end_time DESC LIMIT 1
 		`, string(tokenStr)).Scan(&lastSuccessTime, &lastSuccessAddr)
 		if err != nil && err != sql.ErrNoRows {
-			as.log.Warn("Failed to get last success time", "token", cutToken(tokenStr), "err", err)
+			as.log.Error("Failed to query last success time", "token", cutToken(tokenStr), "err", err)
 		}
 
 		tunnels[string(tokenStr)] = &TunnelDetail{
@@ -356,6 +395,7 @@ func (as *AdminService) GetAuditingData() (*AuditingResponse, error) {
 
 // cleanupOldRecords periodically cleans up old database records
 func (as *AdminService) cleanupOldRecords() {
+	defer as.wg.Done()
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -368,16 +408,20 @@ func (as *AdminService) cleanupOldRecords() {
 			// Clean up records older than 7 days
 			cutoff := time.Now().AddDate(0, 0, -7)
 
+			// Create a context with timeout for cleanup operations
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
 			as.mu.Lock()
-			if _, err := as.db.Exec("DELETE FROM request_events WHERE created_at < ?", cutoff); err != nil {
+			if _, err := as.db.ExecContext(ctx, "DELETE FROM request_events WHERE created_at < ?", cutoff); err != nil {
 				as.log.Error("Failed to cleanup old request events", "err", err)
 			}
 
-			if _, err := as.db.Exec("DELETE FROM tunnel_events WHERE created_at < ?", cutoff); err != nil {
+			if _, err := as.db.ExecContext(ctx, "DELETE FROM tunnel_events WHERE created_at < ?", cutoff); err != nil {
 				as.log.Error("Failed to cleanup old tunnel events", "err", err)
 			}
 			as.mu.Unlock()
 
+			cancel() // Clean up the context
 			as.log.Debug("Cleaned up old admin records", "cutoff", cutoff)
 		}
 	}
@@ -392,7 +436,7 @@ func (as *AdminService) HandleAuditing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := as.GetAuditingData()
+	response, err := as.GetAuditingData(r.Context())
 	if err != nil {
 		as.log.Error("Failed to get auditing data", "err", err)
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
@@ -415,7 +459,7 @@ func (as *AdminService) HandleMonitoring(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response, err := as.GetMonitoringStats()
+	response, err := as.GetMonitoringStats(r.Context())
 	if err != nil {
 		as.log.Error("Failed to get monitoring stats", "err", err)
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
@@ -425,6 +469,199 @@ func (as *AdminService) HandleMonitoring(w http.ResponseWriter, r *http.Request)
 	safeW.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(safeW).Encode(response); err != nil {
 		as.log.Error("Failed to encode monitoring response", "err", err)
+		safeError(safeW, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// GetAPIDocumentation returns API documentation for all admin endpoints
+func (as *AdminService) GetAPIDocumentation() *APIDocsResponse {
+	return &APIDocsResponse{
+		Version: "1.0",
+		Endpoints: []APIEndpoint{
+			{
+				Path:        "/admin/monitoring",
+				Method:      "GET",
+				Description: "Get high-level monitoring statistics for dashboards and alerting",
+				Response: map[string]interface{}{
+					"timestamp": map[string]string{
+						"type":        "string",
+						"format":      "datetime",
+						"description": "Time when statistics were collected",
+					},
+					"unique_tunnels": map[string]string{
+						"type":        "integer",
+						"description": "Number of unique tunnel tokens currently registered",
+					},
+					"tunnel_connections": map[string]string{
+						"type":        "integer",
+						"description": "Number of active tunnel WebSocket connections",
+					},
+					"pending_requests": map[string]string{
+						"type":        "integer",
+						"description": "Number of requests currently waiting for response",
+					},
+					"completed_requests": map[string]string{
+						"type":        "integer",
+						"description": "Total number of successfully completed requests",
+					},
+					"errored_requests": map[string]string{
+						"type":        "integer",
+						"description": "Total number of requests that ended with errors",
+					},
+				},
+			},
+			{
+				Path:        "/admin/auditing",
+				Method:      "GET",
+				Description: "Get detailed tunnel and connection information for security auditing and debugging",
+				Response: map[string]interface{}{
+					"timestamp": map[string]string{
+						"type":        "string",
+						"format":      "datetime",
+						"description": "Time when audit data was collected",
+					},
+					"tunnels": map[string]interface{}{
+						"type":        "object",
+						"description": "Map of tunnel tokens to detailed tunnel information",
+						"additionalProperties": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"token": map[string]string{
+									"type":        "string",
+									"description": "Tunnel authentication token",
+								},
+								"remote_addr": map[string]string{
+									"type":        "string",
+									"description": "IP address of the tunnel client",
+								},
+								"remote_name": map[string]string{
+									"type":        "string",
+									"description": "Hostname of the tunnel client (if available)",
+								},
+								"remote_whois": map[string]string{
+									"type":        "string",
+									"description": "WHOIS information for client IP (if available)",
+								},
+								"client_version": map[string]string{
+									"type":        "string",
+									"description": "Version of the tunnel client software",
+								},
+								"last_activity": map[string]string{
+									"type":        "string",
+									"format":      "datetime",
+									"description": "Timestamp of last activity on this tunnel",
+								},
+								"active_connections": map[string]interface{}{
+									"type":        "array",
+									"description": "List of currently active HTTP requests through this tunnel",
+									"items": map[string]interface{}{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"request_id": map[string]string{
+												"type":        "integer",
+												"description": "Unique identifier for this request",
+											},
+											"method": map[string]string{
+												"type":        "string",
+												"description": "HTTP method (GET, POST, etc.)",
+											},
+											"uri": map[string]string{
+												"type":        "string",
+												"description": "Request URI path and query string",
+											},
+											"remote_addr": map[string]string{
+												"type":        "string",
+												"description": "IP address of the HTTP client",
+											},
+											"start_time": map[string]string{
+												"type":        "string",
+												"format":      "datetime",
+												"description": "When this request started",
+											},
+										},
+									},
+								},
+								"last_error_time": map[string]string{
+									"type":        "string",
+									"format":      "datetime",
+									"description": "Timestamp of most recent error (if any)",
+								},
+								"last_error_addr": map[string]string{
+									"type":        "string",
+									"description": "IP address associated with most recent error",
+								},
+								"last_success_time": map[string]string{
+									"type":        "string",
+									"format":      "datetime",
+									"description": "Timestamp of most recent successful request",
+								},
+								"last_success_addr": map[string]string{
+									"type":        "string",
+									"description": "IP address associated with most recent success",
+								},
+								"pending_requests": map[string]string{
+									"type":        "integer",
+									"description": "Number of requests currently pending for this tunnel",
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Path:        "/admin/api-docs",
+				Method:      "GET",
+				Description: "Get API documentation for all admin endpoints in JSON format",
+				Response: map[string]interface{}{
+					"version": map[string]string{
+						"type":        "string",
+						"description": "API version number",
+					},
+					"endpoints": map[string]interface{}{
+						"type":        "array",
+						"description": "List of available API endpoints with their documentation",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"path": map[string]string{
+									"type":        "string",
+									"description": "URL path for this endpoint",
+								},
+								"method": map[string]string{
+									"type":        "string",
+									"description": "HTTP method (GET, POST, etc.)",
+								},
+								"description": map[string]string{
+									"type":        "string",
+									"description": "Human-readable description of endpoint purpose",
+								},
+								"response": map[string]string{
+									"type":        "object",
+									"description": "JSON schema describing the response format",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// HandleAPIDocs handles /admin/api-docs requests
+func (as *AdminService) HandleAPIDocs(w http.ResponseWriter, r *http.Request) {
+	safeW := &safeResponseWriter{ResponseWriter: w}
+
+	if r.Method != "GET" {
+		safeError(safeW, "Only GET requests are supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	response := as.GetAPIDocumentation()
+
+	safeW.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(safeW).Encode(response); err != nil {
+		as.log.Error("Failed to encode API docs response", "err", err)
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 	}
 }
