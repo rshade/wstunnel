@@ -60,6 +60,7 @@ type remoteRequest struct {
 	buffer     *bytes.Buffer       // request buffer to send
 	replyChan  chan responseBuffer // response that got returned, capacity=1!
 	deadline   time.Time           // timeout
+	startTime  time.Time           // when the request started
 	log        log15.Logger
 }
 
@@ -127,6 +128,8 @@ type WSTunnelServer struct {
 	tokenPasswordsMutex  sync.RWMutex            // mutex to protect password map
 	tokenClients         map[token]int           // track number of clients per token
 	tokenClientsMutex    sync.RWMutex            // mutex to protect client count map
+	adminService         *AdminService           // admin service for monitoring and auditing
+	adminServiceMutex    sync.RWMutex            // mutex to protect admin service access
 }
 
 // name Lookups
@@ -289,6 +292,19 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 		return // already started...
 	}
 	t.serverRegistry = make(map[token]*remoteServer)
+
+	// Initialize admin service if not already set
+	t.adminServiceMutex.Lock()
+	if t.adminService == nil {
+		adminService, err := NewAdminService(t, ":memory:")
+		if err != nil {
+			t.Log.Error("Failed to create admin service", "err", err)
+		} else {
+			t.adminService = adminService
+		}
+	}
+	t.adminServiceMutex.Unlock()
+
 	go t.idleTunnelReaper()
 
 	//===== HTTP Server =====
@@ -327,6 +343,13 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	httpMux.HandleFunc(buildPath(t.BasePath, "/_tunnel"), wrap(tunnelHandler))
 	httpMux.HandleFunc(buildPath(t.BasePath, "/_health_check"), wrap(checkHandler))
 	httpMux.HandleFunc(buildPath(t.BasePath, "/_stats"), wrap(statsHandler))
+	// Register admin endpoints
+	t.adminServiceMutex.RLock()
+	if t.adminService != nil {
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/auditing"), t.adminService.HandleAuditing)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/monitoring"), t.adminService.HandleMonitoring)
+	}
+	t.adminServiceMutex.RUnlock()
 	httpServer.Handler = httpMux
 	//httpServer.ErrorLog = log15Logger // would like to set this somehow...
 
@@ -367,6 +390,13 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 
 // Stop wstunnelserver stop
 func (t *WSTunnelServer) Stop() {
+	t.adminServiceMutex.RLock()
+	if t.adminService != nil {
+		if err := t.adminService.Close(); err != nil {
+			t.Log.Error("failed to close admin service", "error", err)
+		}
+	}
+	t.adminServiceMutex.RUnlock()
 	t.exitChan <- struct{}{}
 }
 
@@ -843,12 +873,14 @@ func (rs *remoteServer) RetireRequest(req *remoteRequest) {
 func makeRequest(r *http.Request, httpTimeout time.Duration) *remoteRequest {
 	buf := &bytes.Buffer{}
 	_ = r.Write(buf)
+	now := time.Now()
 	return &remoteRequest{
 		id:        -1,
 		info:      r.Method + " " + r.URL.String(),
 		buffer:    buf,
 		replyChan: make(chan responseBuffer, 10),
-		deadline:  time.Now().Add(httpTimeout),
+		deadline:  now.Add(httpTimeout),
+		startTime: now,
 	}
 
 }
