@@ -4,12 +4,94 @@ This document provides operational guidance for using WStunnel's admin API endpo
 
 ## Overview
 
-WStunnel provides two admin API endpoints that return JSON data:
+WStunnel provides admin API endpoints that return JSON data:
 
 - `/admin/monitoring` - High-level statistics for dashboards and alerting
 - `/admin/auditing` - Detailed tunnel and connection information for security and debugging
+- `/admin/api-docs` - JSON schema documentation for all admin endpoints
+- `/admin/ui` - Web-based admin dashboard interface
+- `/admin` - Redirects to `/admin/ui` for convenience
 
 These endpoints use SQLite for persistent data storage, automatically cleaning up records older than 7 days.
+
+## Web Admin Interface
+
+WStunnel includes a built-in web interface for monitoring and managing tunnels:
+
+### Accessing the Admin UI
+
+- **URL**: `http://localhost:8080/admin/ui` (or your configured host/port)
+- **With Base Path**: If using `-base-path /wstunnel`, access via `http://localhost:8080/wstunnel/admin/ui`
+- **Shortcut**: Navigate to `/admin` and you'll be automatically redirected to the UI
+
+### Admin UI Features
+
+- **Real-time Dashboard**: Auto-refreshing metrics with configurable intervals (5s, 10s, 30s, 1m, or manual)
+- **Tunnel Overview**: View all active tunnels with detailed connection information
+- **Search & Filter**: Find specific tunnels by token, IP address, or hostname
+- **Connection Status**: Monitor tunnel health with color-coded status indicators
+- **Responsive Design**: Works on desktop and mobile devices
+- **Dark Theme**: Terminal-inspired interface for reduced eye strain
+
+### UI Status Indicators
+
+- **🟢 Active**: Tunnel has activity within the last minute
+- **🟠 Idle**: Tunnel active within last 5 minutes but not recently
+- **⚪ Inactive**: Tunnel hasn't been used for over 5 minutes
+- **🔴 Error**: Recent errors detected on the tunnel
+
+### Configuration
+
+The admin UI automatically detects your base path configuration and adapts its API calls accordingly. No additional configuration is required beyond starting the WStunnel server.
+
+## API Documentation
+
+### Self-Documenting API
+
+WStunnel provides a self-documenting API endpoint that returns JSON schema information for all admin endpoints:
+
+```bash
+curl http://localhost:8080/admin/api-docs | jq
+```
+
+This endpoint returns:
+
+- **Version**: API version information
+- **Endpoints**: Complete list of available endpoints with descriptions
+- **Response Schemas**: Detailed field descriptions and data types for each endpoint
+
+### Example API Documentation Response
+
+```json
+{
+  "version": "1.0",
+  "endpoints": [
+    {
+      "path": "/admin/monitoring",
+      "method": "GET",
+      "description": "Get high-level monitoring statistics for dashboards and alerting",
+      "response": {
+        "timestamp": {
+          "type": "string",
+          "format": "datetime",
+          "description": "Time when statistics were collected"
+        },
+        "unique_tunnels": {
+          "type": "integer",
+          "description": "Number of unique tunnel tokens currently registered"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Integration Benefits
+
+- **Automated Client Generation**: Use the schema to generate API clients
+- **Validation**: Validate responses against the documented schema
+- **Documentation**: Always up-to-date API documentation
+- **Tooling**: Build custom monitoring tools with complete API knowledge
 
 ## Operational Use Cases
 

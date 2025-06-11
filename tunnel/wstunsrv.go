@@ -348,6 +348,9 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	if t.adminService != nil {
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/auditing"), t.adminService.HandleAuditing)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/monitoring"), t.adminService.HandleMonitoring)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/api-docs"), t.adminService.HandleAPIDocs)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/ui"), t.adminService.HandleAdminUI)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin"), t.adminService.HandleAdminUIRedirect)
 	}
 	t.adminServiceMutex.RUnlock()
 	httpServer.Handler = httpMux

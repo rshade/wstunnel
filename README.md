@@ -157,6 +157,7 @@ $ ./wstunnel srv -port 8080 -base-path /wstunnel &
 ```
 
 With a base path configured, all WStunnel endpoints become available under the specified path:
+
 - Health check: `http://proxy.example.com/wstunnel/_health_check`
 - Stats: `http://proxy.example.com/wstunnel/_stats`
 - Tunnel endpoint: `ws://proxy.example.com/wstunnel/_tunnel`
@@ -204,12 +205,14 @@ $ ./wstunnel cli -tunnel ws://wstun.example.com:8080/wstunnel -server http://loc
 ```
 
 > **Security Warning**: Passing passwords via command-line arguments is not recommended as they can be exposed through:
+>
 > - Process listings (visible to other users on the system)
 > - Shell history files
 > - System logs and crash dumps
 > - Command-line argument inspection tools
 >
 > Instead, consider these more secure alternatives:
+>
 > - Use environment variables: `WSTUNNEL_PASSWORD=mypassword ./wstunnel cli ...`
 > - Store credentials in a configuration file with restricted permissions
 > - Use interactive password prompts (not yet implemented)
@@ -248,7 +251,7 @@ The above example tells WStunnel client to only forward requests to `http://loca
 - `wstunnel cli -regexp 'https://.*\.some\.example\.com' -server https://default.some.example.com ...`
 - `curl '-HX-Host: https://www.some.example.com'`
 
-Or to allow access to www.example.com and blog.example.com over http you might use:
+Or to allow access to <www.example.com> and blog.example.com over http you might use:
 
 - `wstunnel cli -regexp 'http://(www\.example\.com|blog\.example\.com)' -server http://www.example.com ...`
 - `curl '-HX-Host: http://blog.example.com'`
@@ -367,6 +370,7 @@ WStunnel server provides two JSON API endpoints for programmatic monitoring and 
 Returns high-level statistics in JSON format, suitable for monitoring dashboards and alerting systems.
 
 **Example Request:**
+
 ```bash
 curl http://localhost:8080/admin/monitoring
 # With base path:
@@ -374,6 +378,7 @@ curl http://localhost:8080/wstunnel/admin/monitoring
 ```
 
 **Example Response:**
+
 ```json
 {
   "timestamp": "2025-01-09T15:30:45Z",
@@ -386,6 +391,7 @@ curl http://localhost:8080/wstunnel/admin/monitoring
 ```
 
 **Fields:**
+
 - `unique_tunnels`: Number of unique tunnel tokens registered
 - `tunnel_connections`: Number of active tunnel connections
 - `pending_requests`: Current number of requests waiting for response
@@ -397,6 +403,7 @@ curl http://localhost:8080/wstunnel/admin/monitoring
 Returns comprehensive details about all active tunnels and their connections, suitable for security auditing and detailed analysis.
 
 **Example Request:**
+
 ```bash
 curl http://localhost:8080/admin/auditing
 # With base path:
@@ -404,6 +411,7 @@ curl http://localhost:8080/wstunnel/admin/auditing
 ```
 
 **Example Response:**
+
 ```json
 {
   "timestamp": "2025-01-09T15:30:45Z",
@@ -435,6 +443,7 @@ curl http://localhost:8080/wstunnel/admin/auditing
 ```
 
 **Tunnel Fields:**
+
 - `token`: The tunnel token (first 8 characters shown in logs)
 - `remote_addr`: IP address and port of the tunnel client
 - `remote_name`: Reverse DNS lookup of the client IP
@@ -449,6 +458,7 @@ curl http://localhost:8080/wstunnel/admin/auditing
 - `pending_requests`: Number of requests currently pending
 
 **Active Connection Fields:**
+
 - `request_id`: Unique identifier for the request
 - `method`: HTTP method (GET, POST, etc.)
 - `uri`: The requested URI path
@@ -456,6 +466,7 @@ curl http://localhost:8080/wstunnel/admin/auditing
 - `start_time`: When the request was initiated
 
 **Use Cases:**
+
 - **Monitoring**: Use `/admin/monitoring` for dashboards, alerting, and performance tracking
 - **Security Auditing**: Use `/admin/auditing` to track which clients are connecting from where
 - **Debugging**: Use `/admin/auditing` to see active requests and recent errors
