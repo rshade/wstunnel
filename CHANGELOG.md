@@ -1,5 +1,52 @@
 # ChangeLog
 
+## [v1.1.3](https://github.com/rshade/wstunnel/compare/v1.1.2...v1.1.3) (2025-06-11)
+
+### Chores
+
+*updating renovate.json settings for automerge ([#155](https://github.com/rshade/wstunnel/issues/155)) ([1152f52](https://github.com/rshade/wstunnel/commit/1152f5281844feee50ed5a7453f7c93ce6a39961))
+*removing wip from label section ([#150](https://github.com/rshade/wstunnel/issues/150)) ([5cecd94](https://github.com/rshade/wstunnel/commit/5cecd94a168656264a0d2093ad9c548e5b3d850a))
+* **deps**: Update module modernc.org/libc to v2 ([#162](https://github.com/rshade/wstunnel/issues/162)) ([15ba78d](https://github.com/rshade/wstunnel/commit/15ba78d13bb924275132f0bb393d2169777094e2))
+* **deps**: Update golang.org/x/exp digest to dcc06ee ([#163](https://github.com/rshade/wstunnel/issues/163)) ([6b1a7ce](https://github.com/rshade/wstunnel/commit/6b1a7ce9cb138b7a22bc0c4a2f1e5163b2c19777))
+* **deps**: Update all non-major go dependencies ([#161](https://github.com/rshade/wstunnel/issues/161)) ([bbc4982](https://github.com/rshade/wstunnel/commit/bbc498238b30f146093208ab76676dfb25c15e50))
+* **deps**: Update dependency go to v1.24.4 ([#156](https://github.com/rshade/wstunnel/issues/156)) ([19d805d](https://github.com/rshade/wstunnel/commit/19d805da6f5fb2f39d60b78d653f02fa6522b18f))
+* **deps**: Update module github.com/go-logr/logr to v1.4.3 ([#152](https://github.com/rshade/wstunnel/issues/152)) ([faa82b3](https://github.com/rshade/wstunnel/commit/faa82b349e861cbe8c9a1f4325bcfb9462d366f9))
+
+### Features
+
+*add admin dashboard for monitoring and management ([#159](https://github.com/rshade/wstunnel/issues/159)) ([84037c4](https://github.com/rshade/wstunnel/commit/84037c46336be07458acaed0481902d1726912fe))
+*add admin API endpoints for monitoring and auditing ([#158](https://github.com/rshade/wstunnel/issues/158)) ([d69e61c](https://github.com/rshade/wstunnel/commit/d69e61c931ff57fafccbcc674d62bfb0ab48fa4c))
+*add base path support for reverse proxy deployments ([#157](https://github.com/rshade/wstunnel/issues/157)) ([13d32db](https://github.com/rshade/wstunnel/commit/13d32db04b95ac042121a0fbc21f076d84299197))
+*add connection and request limiting configuration options ([#153](https://github.com/rshade/wstunnel/issues/153)) ([3f0a311](https://github.com/rshade/wstunnel/commit/3f0a311bfd686e6819cbff68bf536c56a550141c))
+*add client version tracking to server status endpoint ([#151](https://github.com/rshade/wstunnel/issues/151)) ([46942ee](https://github.com/rshade/wstunnel/commit/46942eeefef1e0955dbaa8300145d3243ce615f9))
+
+## [v1.1.2](https://github.com/rshade/wstunnel/compare/v1.1.1...v1.1.2) (2025-05-27)
+
+### Bug Fixes
+
+*ensure proper timeout of requests to _token endpoint ([#119](https://github.com/rshade/wstunnel/issues/119)) ([896f8b4](https://github.com/rshade/wstunnel/commit/896f8b4721b92866fc4bc9adff181ad6ed0cd850))
+
+### Chores
+
+* **deps**: Update github.com/google/pprof digest to c008609 ([#123](https://github.com/rshade/wstunnel/issues/123)) ([c62dc8f](https://github.com/rshade/wstunnel/commit/c62dc8f41e616d4dcd472b36c791f4e9835786a5))
+* **deps**: Update all non-major go dependencies ([#124](https://github.com/rshade/wstunnel/issues/124)) ([115ad48](https://github.com/rshade/wstunnel/commit/115ad48421ec8c682c47887075d85253e11aac6f))
+* **deps**: Update codecov/codecov-action action to v5.4.3 ([#125](https://github.com/rshade/wstunnel/issues/125)) ([9607dda](https://github.com/rshade/wstunnel/commit/9607ddae902771e6b14eb89300141031f95a14a3))
+* **deps**: bump golang.org/x/net from 0.37.0 to 0.38.0 in the go_modules group ([#122](https://github.com/rshade/wstunnel/issues/122)) ([0910f9f](https://github.com/rshade/wstunnel/commit/0910f9f75d564b1286c9f235f5c9a92cf1d064a8))
+* **deps**: Update module golang.org/x/net to v0.38.0 [SECURITY] ([#121](https://github.com/rshade/wstunnel/issues/121)) ([64fbe33](https://github.com/rshade/wstunnel/commit/64fbe3374c6e7804c77d990da129990fa3f42d16))
+* **deps**: Update github.com/google/pprof digest to c008609 ([#112](https://github.com/rshade/wstunnel/issues/112)) ([4a9c765](https://github.com/rshade/wstunnel/commit/4a9c76588ca26339bc3847d3d3152e14ce657672))
+* **deps**: Update golangci/golangci-lint-action action to v8 ([#114](https://github.com/rshade/wstunnel/issues/114)) ([bbb380d](https://github.com/rshade/wstunnel/commit/bbb380d592ef213371e51a30964a4e34bed8e41b))
+* **deps**: Update actions/setup-go action to v5.5.0 ([#118](https://github.com/rshade/wstunnel/issues/118)) ([af55641](https://github.com/rshade/wstunnel/commit/af556415eb262623fba545578369e7fbd9cb984e))
+* **deps**: Update module dario.cat/mergo to v1.0.2 ([#117](https://github.com/rshade/wstunnel/issues/117)) ([b450a24](https://github.com/rshade/wstunnel/commit/b450a246439c7b2f5c787f765d6c1efe35edd797))
+* **deps**: Update dependency go to v1.24.3 ([#116](https://github.com/rshade/wstunnel/issues/116)) ([dfad0b9](https://github.com/rshade/wstunnel/commit/dfad0b9044b3920cdaa22dbc701c26e36466d2ea))
+* **deps**: Update all non-major go dependencies ([#115](https://github.com/rshade/wstunnel/issues/115)) ([165a238](https://github.com/rshade/wstunnel/commit/165a238f245a4a637c2f99f386c5a390db29d6e4))
+* **deps**: Update golangci/golangci-lint-action action to v7.0.1 ([#113](https://github.com/rshade/wstunnel/issues/113)) ([e1c1252](https://github.com/rshade/wstunnel/commit/e1c1252a0390da4c437561598d807c0986f50c2c))
+
+### Features
+
+*add Android support with documentation and build configuration ([#149](https://github.com/rshade/wstunnel/issues/149)) ([3f724a1](https://github.com/rshade/wstunnel/commit/3f724a1c83d02a741a646777c9cbea2a2dbad098))
+*add per-token password authentication support ([#148](https://github.com/rshade/wstunnel/issues/148)) ([8cd416f](https://github.com/rshade/wstunnel/commit/8cd416f651e9a08fd9e0766e1dfc9601da091b07))
+*update tooling and migrate from Ginkgo to standard Go tests ([#120](https://github.com/rshade/wstunnel/issues/120)) ([230eea4](https://github.com/rshade/wstunnel/commit/230eea4090bd0de4bb77515221d548a1c5537bd3))
+
 ## [v1.1.1](https://github.com/rshade/wstunnel/compare/1.0.7...v1.1.1) (2025-04-21)
 
 ### Bug Fixes
