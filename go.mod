@@ -2,13 +2,13 @@ module github.com/rshade/wstunnel
 
 go 1.24.0
 
-toolchain go1.25.5
+toolchain go1.25.6
 
 require (
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
-	modernc.org/sqlite v1.44.0
+	modernc.org/sqlite v1.44.1
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/term v0.39.0 // indirect
-	modernc.org/libc v1.67.4 // indirect
+	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
