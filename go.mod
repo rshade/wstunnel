@@ -8,7 +8,7 @@ require (
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3
 	gopkg.in/inconshreveable/log15.v2 v2.16.0
-	modernc.org/sqlite v1.45.0
+	modernc.org/sqlite v1.46.0
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
-	modernc.org/libc v1.67.7 // indirect
+	modernc.org/libc v1.68.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
