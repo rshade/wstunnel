@@ -18,8 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
+
+var basicTestLog = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 // Our simple proxy server. This server: only handles proxying of HTTPS data via
 // CONNECT protocol, not HTTP. Also we don't bother to modify headers, such as
@@ -40,7 +42,7 @@ func copyAndClose(w, r net.Conn) {
 
 func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	proxyConnCount++
-	log15.Info("externalProxyServer proxying", "url", r.RequestURI)
+	basicTestLog.Info().Str("url", r.RequestURI).Msg("externalProxyServer proxying")
 
 	if r.Method != "CONNECT" {
 		errMsg := "CONNECT not passed to proxy"
@@ -117,16 +119,16 @@ func (ts *TestServer) startClient() *WSTunnelClient {
 	})
 
 	if err := ts.wstuncli.Start(); err != nil {
-		log15.Error("Error starting client", "error", err)
+		basicTestLog.Error().Err(err).Msg("Error starting client")
 		os.Exit(1)
 	}
-	log15.Info("Client started", "serverURL", ts.server.URL, "token", ts.wstunToken)
+	basicTestLog.Info().Str("serverURL", ts.server.URL).Str("token", ts.wstunToken).Msg("Client started")
 	return ts.wstuncli
 }
 
 // waitConnected waits for the client to connect with a timeout
 func (ts *TestServer) waitConnected() {
-	log15.Info("Waiting for client to connect...")
+	basicTestLog.Info().Msg("Waiting for client to connect...")
 	timeout := time.After(5 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -136,11 +138,11 @@ func (ts *TestServer) waitConnected() {
 		select {
 		case <-timeout:
 			// If we time out, log a warning but continue
-			log15.Warn("Connection wait timeout reached")
+			basicTestLog.Warn().Msg("Connection wait timeout reached")
 			return
 		case <-ticker.C:
 			if ts.wstuncli != nil && ts.wstuncli.IsConnected() {
-				log15.Info("Client connected successfully")
+				basicTestLog.Info().Msg("Client connected successfully")
 				success = true
 			}
 		}
@@ -159,7 +161,7 @@ func NewTestServer() *TestServer {
 	mux := http.NewServeMux()
 	// Add a default handler that will be overridden by specific tests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log15.Debug("Default handler called", "path", r.URL.Path)
+		basicTestLog.Debug().Str("path", r.URL.Path).Msg("Default handler called")
 		w.WriteHeader(200)
 	})
 	ts.server = httptest.NewServer(mux)

@@ -77,7 +77,9 @@ func NewWSTunnelClientFromConfig(config *ClientConfig) (*WSTunnelClient, error) 
 		Timeout:     time.Duration(config.Timeout) * time.Second,
 		Log:         makeLogger("WStuncli", config.LogFile, ""),
 		connManager: NewConnectionManager(time.Duration(config.ReconnectDelay)*time.Second, config.MaxRetries),
+		exitChan:    make(chan struct{}, 1),
 	}
+	pkgLog = newPkgLogger()
 
 	// Parse token:password format
 	if config.Token != "" {

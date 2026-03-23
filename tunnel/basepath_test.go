@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 func TestNormalizeBasePath(t *testing.T) {
@@ -325,9 +325,11 @@ func TestNewWSTunnelServer_BasePath_Configuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
+			// Capture log output (zerolog uses DefaultLogWriter)
 			var logOutput bytes.Buffer
-			log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			prevWriter := DefaultLogWriter
+			DefaultLogWriter = &logOutput
+			defer func() { DefaultLogWriter = prevWriter }()
 
 			server := NewWSTunnelServer(tt.args)
 			if server == nil {
@@ -345,8 +347,8 @@ func TestNewWSTunnelServer_BasePath_Configuration(t *testing.T) {
 				if !strings.Contains(logStr, tt.expectLog) {
 					t.Errorf("Expected log to contain %q, but log was: %s", tt.expectLog, logStr)
 				}
-				if !strings.Contains(logStr, fmt.Sprintf("basePath=%s", tt.expectedPath)) {
-					t.Errorf("Expected log to contain basePath=%s, but log was: %s", tt.expectedPath, logStr)
+				if !strings.Contains(logStr, tt.expectedPath) {
+					t.Errorf("Expected log to contain %s, but log was: %s", tt.expectedPath, logStr)
 				}
 			} else {
 				if strings.Contains(logStr, "Base path configured") {
@@ -442,9 +444,8 @@ func TestWSTunnelServer_URLRewriting(t *testing.T) {
 			// Create a test server
 			server := &WSTunnelServer{
 				BasePath: tt.basePath,
-				Log:      log15.New(),
+				Log:      zerolog.Nop(),
 			}
-			server.Log.SetHandler(log15.DiscardHandler())
 
 			// Create a test handler that records the rewritten URL
 			var rewrittenPath string
@@ -627,7 +628,6 @@ func TestWSTunnelServer_Integration_BasePath(t *testing.T) {
 			if server == nil {
 				t.Fatal("Expected server to be created")
 			}
-			server.Log.SetHandler(log15.DiscardHandler())
 
 			// Start the server
 			listener, err := net.Listen("tcp", "127.0.0.1:0")

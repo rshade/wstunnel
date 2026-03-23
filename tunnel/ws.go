@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -16,11 +17,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
-func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
-	log.Info("HTTP Error", "token", token, "error", err, "code", code)
+func httpError(log zerolog.Logger, w http.ResponseWriter, identifier, err string, code int) {
+	log.Info().Str("id", identifier).Str("error", err).Int("code", code).Msg("HTTP Error")
 
 	// Use safeError to avoid superfluous WriteHeader warnings
 	safeError(w, html.EscapeString(err), code)
@@ -83,8 +84,8 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}
 	if len(tok) < minTokenLen {
 		httpError(t.Log, w, addr,
-			fmt.Sprintf("Rendez-vous token (%s) is too short (must be %d chars)",
-				tok, minTokenLen), 400)
+			fmt.Sprintf("Rendez-vous token is too short (must be %d chars)",
+				minTokenLen), 400)
 		return
 	}
 
@@ -137,10 +138,10 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		t.Log.Info("Token authenticated with password", "token", logTok)
+		t.Log.Info().Str("token", logTok).Msg("Token authenticated with password")
 	} else {
 		// Token doesn't require a password, allow the connection
-		t.Log.Info("Token authenticated without password", "token", logTok)
+		t.Log.Info().Str("token", logTok).Msg("Token authenticated without password")
 	}
 
 	// Check max clients per token limit and reserve quota before upgrade
@@ -181,13 +182,11 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		if _, ok := err.(websocket.HandshakeError); ok {
-			t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
-				"err", "Not a websocket handshake")
+			t.Log.Info().Str("token", logTok).Str("addr", addr).Str("err", "Not a websocket handshake").Msg("WS new tunnel connection rejected")
 			httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
 			return
 		}
-		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
-			"err", err.Error())
+		t.Log.Info().Str("token", logTok).Str("addr", addr).Str("err", err.Error()).Msg("WS new tunnel connection rejected")
 		httpError(t.Log, w, logTok, err.Error(), 400)
 		return
 	}
@@ -201,8 +200,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Extract and store client version from header
 	clientVersion := r.Header.Get("X-Client-Version")
 	rs.setClientVersion(clientVersion)
-	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws),
-		"rs", rs, "client_version", clientVersion)
+	t.Log.Info().Str("token", logTok).Str("addr", addr).Str("ws", wsp(ws)).Str("client_version", clientVersion).Msg("WS new tunnel connection")
 	// do reverse DNS lookup asynchronously
 	go func() {
 		name, whois := ipAddrLookup(t.Log, rs.remoteAddr)
@@ -222,12 +220,12 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
 		if err := ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second)); err != nil {
-			rs.log.Error("Error writing control message", "err", err)
+			rs.log.Error().Err(err).Msg("Error writing control message")
 		}
 		time.Sleep(5 * time.Second)
-		rs.log.Info("WS closing due to ping timeout", "ws", wsp(ws))
+		rs.log.Info().Str("ws", wsp(ws)).Msg("WS closing due to ping timeout")
 		if err := ws.Close(); err != nil {
-			rs.log.Error("Failed to close websocket", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to close websocket")
 		}
 	}
 	// timeout timer
@@ -236,7 +234,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	ph := func(message string) error {
 		timer.Reset(t.WSTimeout)
 		if err := ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(t.WSTimeout/3)); err != nil {
-			rs.log.Error("Error writing pong message", "err", err)
+			rs.log.Error().Err(err).Msg("Error writing pong message")
 			return err
 		}
 		// update lastActivity
@@ -257,9 +255,9 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			// awesome...
 		case <-ch:
 			// time to close shop
-			rs.log.Info("WS closing on signal", "ws", wsp(ws))
+			rs.log.Info().Str("ws", wsp(ws)).Msg("WS closing on signal")
 			if err := ws.Close(); err != nil {
-				rs.log.Error("Failed to close websocket", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to close websocket")
 			}
 			return
 		}
@@ -269,13 +267,12 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			req.replyChan <- responseBuffer{
 				err: errors.New("timeout before forwarding the request"),
 			}
-			req.log.Info("WS   SND timeout before sending", "ago",
-				time.Since(req.deadline).Seconds())
+			req.log.Info().Float64("ago", time.Since(req.deadline).Seconds()).Msg("WS   SND timeout before sending")
 			continue
 		}
 		// write the request into the tunnel
 		if err = ws.SetWriteDeadline(time.Time{}); err != nil {
-			rs.log.Error("Failed to set write deadline", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to set write deadline")
 			break // Break out of write loop on error
 		}
 		var w io.WriteCloser
@@ -299,18 +296,18 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		req.log.Info("WS   SND", "info", req.info)
+		req.log.Info().Str("info", req.info).Msg("WS   SND")
 	}
 	// tell the sender to retry the request
 	req.replyChan <- responseBuffer{err: ErrRetry}
-	req.log.Info("WS error causes retry")
+	req.log.Info().Msg("WS error causes retry")
 	// close up shop
 	if err := ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second)); err != nil {
-		rs.log.Error("Error writing control message", "err", err)
+		rs.log.Error().Err(err).Msg("Error writing control message")
 	}
 	time.Sleep(2 * time.Second)
 	if err := ws.Close(); err != nil {
-		rs.log.Error("Failed to close websocket", "err", err)
+		rs.log.Error().Err(err).Msg("Failed to close websocket")
 	}
 }
 
@@ -329,7 +326,7 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 	// continue reading until we get an error
 	for {
 		if err = ws.SetReadDeadline(time.Time{}); err != nil {
-			rs.log.Error("Failed to set read deadline", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to set read deadline")
 			break // Break out of read loop on error
 		}
 		// read a message from the tunnel
@@ -360,18 +357,18 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 			// try to enqueue response
 			select {
 			case req.replyChan <- rb:
-				rs.log.Info("WS   RCV enqueued response", "id", id, "ws", wsp(ws))
+				rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV enqueued response")
 				rs.readCond.Wait() // wait for response to be sent
 			default:
-				rs.log.Info("WS   RCV can't enqueue response", "id", id, "ws", wsp(ws))
+				rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV can't enqueue response")
 			}
 		} else {
-			rs.log.Info("%s #%d: WS   RCV orphan response", "id", id, "ws", wsp(ws))
+			rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV orphan response")
 		}
 	}
 	// print error message
 	if err != nil {
-		rs.log.Info("WS   closing", "token", logToken, "err", err.Error(), "ws", wsp(ws))
+		rs.log.Info().Str("token", logToken).Str("err", err.Error()).Str("ws", wsp(ws)).Msg("WS   closing")
 	}
 	// close up shop
 	ch <- 0 // notify sender
@@ -390,18 +387,11 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 
 	time.Sleep(2 * time.Second)
 	if err := ws.Close(); err != nil {
-		rs.log.Error("Failed to close websocket", "err", err)
+		rs.log.Error().Err(err).Msg("Failed to close websocket")
 	}
 }
 
 // constantTimeEquals performs a constant-time comparison of two strings to prevent timing attacks.
 func constantTimeEquals(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var result byte
-	for i := 0; i < len(a); i++ {
-		result |= a[i] ^ b[i]
-	}
-	return result == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

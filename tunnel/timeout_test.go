@@ -7,12 +7,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
+
+var testLog = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 func TestTokenRequestTimeout(t *testing.T) {
 	// start httptest to simulate target server
@@ -28,7 +31,7 @@ func TestTokenRequestTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	log15.Info("httptest started", "url", server.URL)
+	testLog.Info().Str("url", server.URL).Msg("httptest started")
 
 	// start wstunsrv with a very short timeout
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

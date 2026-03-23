@@ -68,7 +68,7 @@ reviews:
         - Ensure code follows gofmt formatting standards
         - Check that imports are properly organized (standard library first, third-party after)
         - Verify error handling follows the pattern: check immediately, return or log with context
-        - Ensure logging uses log15 with structured key-value pairs
+        - Ensure logging uses zerolog with structured key-value pairs
         - Verify naming conventions: PascalCase for exported, camelCase for unexported
         - Check for unhandled errors
         - Verify proper use of contexts
@@ -93,7 +93,7 @@ reviews:
 
     - path: "go.mod"
       instructions: |
-        - Ensure go.mod uses correct format (e.g., `go 1.24` not `go 1.24.0`)
+        - Ensure go.mod uses correct format (e.g., `go 1.25` not `go 1.25.0`)
 
     - path: "whois/**"
       instructions: |
@@ -109,37 +109,3 @@ reviews:
       - "DO NOT MERGE"
       - "DRAFT"
 
-# Review behavior configuration
-review_status:
-  # Auto-resolve outdated comments when code is updated
-  auto_resolve_conversations: true
-
-  # Don't block merges on outdated review comments
-  block_merge_on_unresolved_conversations: false
-
-  # Only block merges for current/active issues
-  dismiss_stale_reviews: true
-
-  # Handle force pushes and amended commits gracefully
-  handle_force_push: true
-
-  # Automatically mark conversations as resolved when the problematic code is removed/fixed
-  # This is especially useful for amended commits
-  resolve_on_fix: true
-
-  # Don't re-review unchanged files after force push
-  skip_unchanged_files: true
-
-# Auto-approve configuration
-auto_approve:
-  # Dependency updates from Renovate
-  - author: "renovate[bot]"
-    files:
-      - "go.mod"
-      - "go.sum"
-
-  # Documentation-only changes
-  - files:
-      - "**/*.md"
-      - "docs/**"
-    require_review_from_owner: false

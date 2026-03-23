@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/rshade/wstunnel/whois"
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // The ReadTimeout and WriteTimeout don't actually work in Go
@@ -32,6 +32,9 @@ import (
 
 // ErrRetry Error when sending request
 var ErrRetry = errors.New("error sending request, please retry")
+
+// pkgLog is used by functions that don't have access to an instance logger.
+var pkgLog = zerolog.New(os.Stderr).With().Timestamp().Str("pkg", "tunnel").Logger()
 
 const tunnelInactiveKillTimeout = 60 * time.Minute // close dead tunnels
 // const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead tunnels
@@ -61,7 +64,7 @@ type remoteRequest struct {
 	replyChan  chan responseBuffer // response that got returned, capacity=1!
 	deadline   time.Time           // timeout
 	startTime  time.Time           // when the request started
-	log        log15.Logger
+	log        zerolog.Logger
 }
 
 // A remote server
@@ -77,7 +80,7 @@ type remoteServer struct {
 	requestQueue    chan *remoteRequest      // queue of requests to be sent
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
-	log             log15.Logger
+	log             zerolog.Logger
 	readMutex       sync.Mutex // ensure that no more than one goroutine calls the websocket read methods concurrently
 	readCond        *sync.Cond // (NextReader, SetReadDeadline, SetPingHandler, ...)
 }
@@ -120,7 +123,7 @@ type WSTunnelServer struct {
 	HTTPTimeout          time.Duration           // timeout for HTTP requests
 	MaxRequestsPerTunnel int                     // max queued requests per tunnel
 	MaxClientsPerToken   int                     // max clients allowed per token
-	Log                  log15.Logger            // logger with "pkg=WStunsrv"
+	Log                  zerolog.Logger          // logger with "pkg=WStunsrv"
 	exitChan             chan struct{}           // channel to tell the tunnel goroutines to end
 	serverRegistry       map[token]*remoteServer // active remote servers indexed by token
 	serverRegistryMutex  sync.Mutex              // mutex to protect map
@@ -138,7 +141,7 @@ var dnsCache = make(map[string]string)   // ip_address -> reverse DNS lookup
 var whoisCache = make(map[string]string) // ip_address -> whois lookup
 var cacheMutex sync.Mutex
 
-func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
+func ipAddrLookup(log zerolog.Logger, ipAddr string) (dns, who string) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 	dns, ok := dnsCache[ipAddr]
@@ -146,7 +149,7 @@ func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 		names, _ := net.LookupAddr(ipAddr)
 		dns = strings.Join(names, ",")
 		dnsCache[ipAddr] = dns
-		log.Info("DNS lookup", "addr", ipAddr, "dns", dns)
+		log.Info().Str("addr", ipAddr).Str("dns", dns).Msg("DNS lookup")
 	}
 	// whois lookup
 	who, ok = whoisCache[ipAddr]
@@ -158,17 +161,17 @@ func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 }
 
 // validateLimit validates and adjusts configuration limits
-func validateLimit(logger log15.Logger, name string, value, min, max, defaultValue int) int {
+func validateLimit(logger zerolog.Logger, name string, value, min, max, defaultValue int) int {
 	if value < min {
-		logger.Info("Configuration limit below minimum, using default", "param", name, "value", value, "min", min, "default", defaultValue)
+		logger.Info().Str("param", name).Int("value", value).Int("min", min).Int("default", defaultValue).Msg("Configuration limit below minimum, using default")
 		return defaultValue
 	}
 	if value > max {
-		logger.Info("Configuration limit above maximum, using maximum", "param", name, "value", value, "max", max)
+		logger.Info().Str("param", name).Int("value", value).Int("max", max).Msg("Configuration limit above maximum, using maximum")
 		return max
 	}
 	if value > 100 {
-		logger.Info("Configuration limit is high", "param", name, "value", value, "recommended", "10-100")
+		logger.Info().Str("param", name).Int("value", value).Str("recommended", "10-100").Msg("Configuration limit is high")
 	}
 	return value
 }
@@ -192,49 +195,60 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	var tokenPass = srvFlag.String("passwords", "", "comma-separated list of token:password pairs")
 	srvFlag.IntVar(&wstunSrv.MaxRequestsPerTunnel, "max-requests-per-tunnel", defaultMaxReq, "maximum number of queued requests per tunnel (recommended: 10-100, max: 10000)")
 	srvFlag.IntVar(&wstunSrv.MaxClientsPerToken, "max-clients-per-token", 0, "maximum number of clients per token (0 for unlimited, recommended: 10-100, max: 10000)")
+	var logLevel = srvFlag.String("log-level", "info", "log level (debug, info, warn, error)")
+	var logPrettyFlag = srvFlag.Bool("log-pretty", false, "use human-readable console log output")
 
 	if err := srvFlag.Parse(args); err != nil {
-		wstunSrv.Log.Crit("Failed to parse server flags", "err", err)
-		os.Exit(1)
+		bootstrapLog := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+		bootstrapLog.Fatal().Err(err).Msg("Failed to parse server flags")
 	}
 
-	if err := writePid(*pidf); err != nil {
-		wstunSrv.Log.Error("Failed to write pidfile", "err", err)
-	}
+	LogPretty = *logPrettyFlag
 	wstunSrv.Log = makeLogger("WStunsrv", *logf, *slog)
+	pkgLog = newPkgLogger()
+	if err := writePid(*pidf); err != nil {
+		wstunSrv.Log.Error().Err(err).Msg("Failed to write pidfile")
+	}
+
+	level, err := zerolog.ParseLevel(*logLevel)
+	if err != nil {
+		wstunSrv.Log.Warn().Str("level", *logLevel).Msg("Invalid log level, using info")
+		level = zerolog.InfoLevel
+	}
+	zerolog.SetGlobalLevel(level)
 
 	// Normalize base path
 	wstunSrv.BasePath = normalizeBasePath(wstunSrv.BasePath)
 	if wstunSrv.BasePath != "" {
-		wstunSrv.Log.Info("Base path configured", "basePath", wstunSrv.BasePath)
+		wstunSrv.Log.Info().Str("basePath", wstunSrv.BasePath).Msg("Base path configured")
 	}
 
 	// Validate MaxRequestsPerTunnel
 	if wstunSrv.MaxRequestsPerTunnel < 0 {
-		wstunSrv.Log.Error("max-requests-per-tunnel cannot be negative, using default", "value", wstunSrv.MaxRequestsPerTunnel, "default", defaultMaxReq)
+		wstunSrv.Log.Error().Int("value", wstunSrv.MaxRequestsPerTunnel).Int("default", defaultMaxReq).Msg("max-requests-per-tunnel cannot be negative, using default")
 		wstunSrv.MaxRequestsPerTunnel = defaultMaxReq
 	} else if wstunSrv.MaxRequestsPerTunnel == 0 {
 		// Treat 0 as unlimited by falling back to the default buffer size
-		wstunSrv.Log.Warn("max-requests-per-tunnel set to 0 – interpreting as unlimited (using default buffer size)", "default", defaultMaxReq)
+		wstunSrv.Log.Warn().Int("default", defaultMaxReq).Msg("max-requests-per-tunnel set to 0 – interpreting as unlimited (using default buffer size)")
 		wstunSrv.MaxRequestsPerTunnel = defaultMaxReq
 	} else if wstunSrv.MaxRequestsPerTunnel > 1000 {
-		wstunSrv.Log.Warn("max-requests-per-tunnel is very high, may cause resource issues", "value", wstunSrv.MaxRequestsPerTunnel, "recommended", "10-100 for typical use cases")
+		wstunSrv.Log.Warn().Int("value", wstunSrv.MaxRequestsPerTunnel).Str("recommended", "10-100 for typical use cases").Msg("max-requests-per-tunnel is very high, may cause resource issues")
 	}
 
 	// Validate MaxClientsPerToken
 	if wstunSrv.MaxClientsPerToken < 0 {
-		wstunSrv.Log.Error("max-clients-per-token cannot be negative, disabling limit", "value", wstunSrv.MaxClientsPerToken)
+		wstunSrv.Log.Error().Int("value", wstunSrv.MaxClientsPerToken).Msg("max-clients-per-token cannot be negative, disabling limit")
 		wstunSrv.MaxClientsPerToken = 0
 	} else if wstunSrv.MaxClientsPerToken > 1000 {
-		wstunSrv.Log.Warn("max-clients-per-token is very high, may cause resource issues", "value", wstunSrv.MaxClientsPerToken)
+		wstunSrv.Log.Warn().Int("value", wstunSrv.MaxClientsPerToken).Msg("max-clients-per-token is very high, may cause resource issues")
 	}
-	wstunSrv.WSTimeout = calcWsTimeout(*tout)
+	wstunSrv.WSTimeout = calcWsTimeout(wstunSrv.Log, *tout)
 	cacheMutex.Lock()
 	whoToken = *whoTok
 	cacheMutex.Unlock()
 
 	wstunSrv.HTTPTimeout = time.Duration(*httpTout) * time.Second
-	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HTTPTimeout)
+	wstunSrv.Log.Info().Dur("timeout", wstunSrv.HTTPTimeout).Msg("Setting remote request timeout")
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
 
@@ -245,7 +259,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv.tokenPasswords = make(map[token]string)
 	if *tokenPass != "" {
 		pairs := strings.Split(*tokenPass, ",")
-		for _, pair := range pairs {
+		for i, pair := range pairs {
 			parts := strings.SplitN(pair, ":", 2)
 			if len(parts) == 2 {
 				tok := token(strings.TrimSpace(parts[0]))
@@ -253,31 +267,31 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 
 				// Validate empty token
 				if tok == "" {
-					wstunSrv.Log.Error("Empty token in token:password pair", "pair", pair)
+					wstunSrv.Log.Error().Int("index", i).Msg("Empty token in token:password pair")
 					continue
 				}
 
 				// Validate empty password
 				if pass == "" {
-					wstunSrv.Log.Error("Empty password for token", "token", cutToken(tok))
+					wstunSrv.Log.Error().Str("token", cutToken(tok)).Msg("Empty password for token")
 					continue
 				}
 
 				// Enforce minimum token length
 				if len(tok) < minTokenLen {
-					wstunSrv.Log.Error("Token too short", "token", cutToken(tok), "minLength", minTokenLen)
+					wstunSrv.Log.Error().Str("token", cutToken(tok)).Int("minLength", minTokenLen).Msg("Token too short")
 					continue
 				}
 
 				// Check for duplicate tokens
 				if _, exists := wstunSrv.tokenPasswords[tok]; exists {
-					wstunSrv.Log.Warn("Duplicate token found, overwriting previous entry", "token", cutToken(tok))
+					wstunSrv.Log.Warn().Str("token", cutToken(tok)).Msg("Duplicate token found, overwriting previous entry")
 				}
 
 				wstunSrv.tokenPasswords[tok] = pass
-				wstunSrv.Log.Info("Token password configured", "token", cutToken(tok))
+				wstunSrv.Log.Info().Str("token", cutToken(tok)).Msg("Token password configured")
 			} else {
-				wstunSrv.Log.Warn("Invalid token:password pair", "pair", pair)
+				wstunSrv.Log.Warn().Int("index", i).Msg("Invalid token:password pair (missing ':')")
 			}
 		}
 	}
@@ -287,7 +301,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 
 // Start wstunnel server start
 func (t *WSTunnelServer) Start(listener net.Listener) {
-	t.Log.Info(VV)
+	t.Log.Info().Str("version", VV).Msg("WStunnel server starting")
 	if t.serverRegistry != nil {
 		return // already started...
 	}
@@ -298,7 +312,7 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	if t.adminService == nil {
 		adminService, err := NewAdminService(t, ":memory:")
 		if err != nil {
-			t.Log.Error("Failed to create admin service", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to create admin service")
 		} else {
 			t.adminService = adminService
 		}
@@ -317,7 +331,7 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 			// Recover from panics to prevent server crashes
 			defer func() {
 				if err := recover(); err != nil {
-					t.Log.Error("Panic in HTTP handler", "error", err, "path", r.URL.Path)
+					t.Log.Error().Interface("error", err).Str("path", r.URL.Path).Msg("Panic in HTTP handler")
 					// Try to send error response if possible
 					safeError(w, "Internal server error", http.StatusInternalServerError)
 				}
@@ -354,7 +368,6 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	}
 	t.adminServiceMutex.RUnlock()
 	httpServer.Handler = httpMux
-	//httpServer.ErrorLog = log15Logger // would like to set this somehow...
 
 	// Read/Write timeouts disabled for now due to bug:
 	// https://code.google.com/p/go/issues/detail?id=6410
@@ -364,29 +377,28 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 
 	// Now create the listener and hook it all up
 	if listener == nil {
-		t.Log.Info("Listening", "host", t.Host, "port", t.Port)
+		t.Log.Info().Str("host", t.Host).Int("port", t.Port).Msg("Listening")
 		laddr := fmt.Sprintf("%s:%d", t.Host, t.Port)
 		var err error
 		listener, err = net.Listen("tcp", laddr)
 		if err != nil {
-			t.Log.Crit("Cannot listen", "addr", laddr)
-			os.Exit(1)
+			t.Log.Fatal().Str("addr", laddr).Msg("Cannot listen")
 		}
 	} else {
-		t.Log.Info("Listener", "addr", listener.Addr().String())
+		t.Log.Info().Str("addr", listener.Addr().String()).Msg("Listener")
 	}
 	go func() {
-		t.Log.Debug("Server started")
+		t.Log.Debug().Msg("Server started")
 		if err := httpServer.Serve(listener); err != nil {
-			t.Log.Error("HTTP server error", "err", err)
+			t.Log.Error().Err(err).Msg("HTTP server error")
 		}
-		t.Log.Debug("Server ended")
+		t.Log.Debug().Msg("Server ended")
 	}()
 
 	go func() {
 		<-t.exitChan
 		if err := listener.Close(); err != nil {
-			t.Log.Error("Failed to close listener", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to close listener")
 		}
 	}()
 }
@@ -396,7 +408,7 @@ func (t *WSTunnelServer) Stop() {
 	t.adminServiceMutex.RLock()
 	if t.adminService != nil {
 		if err := t.adminService.Close(); err != nil {
-			t.Log.Error("failed to close admin service", "error", err)
+			t.Log.Error().Err(err).Msg("failed to close admin service")
 		}
 	}
 	t.adminServiceMutex.RUnlock()
@@ -411,7 +423,7 @@ func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	safeW := &safeResponseWriter{ResponseWriter: w}
 
 	if _, err := fmt.Fprintln(safeW, "WSTUNSRV RUNNING"); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 }
 
@@ -431,16 +443,16 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}
 	// print out the number of tunnels
 	if _, err := fmt.Fprintf(safeW, "tunnels=%d\n", len(t.serverRegistry)); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 	t.serverRegistryMutex.Unlock()
 
 	// print configuration limits
 	if _, err := fmt.Fprintf(safeW, "max_requests_per_tunnel=%d\n", t.MaxRequestsPerTunnel); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 	if _, err := fmt.Fprintf(safeW, "max_clients_per_token=%d\n", t.MaxClientsPerToken); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 
 	// print current token client counts
@@ -449,13 +461,13 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		totalClients := 0
 		for tok, count := range t.tokenClients {
 			if _, err := fmt.Fprintf(safeW, "token_clients_%s=%d\n", cutToken(tok), count); err != nil {
-				t.Log.Error("Failed to write response", "err", err)
+				t.Log.Error().Err(err).Msg("Failed to write response")
 			}
 			totalClients += count
 		}
 		t.tokenClientsMutex.RUnlock()
 		if _, err := fmt.Fprintf(safeW, "total_clients=%d\n", totalClients); err != nil {
-			t.Log.Error("Failed to write response", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to write response")
 		}
 	}
 
@@ -466,7 +478,7 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasPrefix(addr, "127.0.0.1") {
 		if _, err := fmt.Fprintln(safeW, "More stats available when called from localhost..."); err != nil {
-			t.Log.Error("Failed to write response", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to write response")
 		}
 		return
 	}
@@ -475,40 +487,40 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	badTunnels := 0
 	for i, rs := range rss {
 		if _, err := fmt.Fprintf(safeW, "\ntunnel%02d_token=%s\n", i, cutToken(rs.token)); err != nil {
-			rs.log.Error("Failed to write response", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to write response")
 		}
 		if _, err := fmt.Fprintf(safeW, "tunnel%02d_req_pending=%d\n", i, len(rs.requestSet)); err != nil {
-			rs.log.Error("Failed to write response", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to write response")
 		}
 		reqPending += len(rs.requestSet)
 		if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_addr=%s\n", i, rs.remoteAddr); err != nil {
-			rs.log.Error("Failed to write response", "err", err)
+			rs.log.Error().Err(err).Msg("Failed to write response")
 		}
 		remoteName, remoteWhois := rs.getRemoteInfo()
 		if remoteName != "" {
 			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_dns=%s\n", i, remoteName); err != nil {
-				rs.log.Error("Failed to write response", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to write response")
 			}
 		}
 		if remoteWhois != "" {
 			if _, err := fmt.Fprintf(safeW, "tunnel%02d_tun_whois=%s\n", i, remoteWhois); err != nil {
-				rs.log.Error("Failed to write response", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to write response")
 			}
 		}
 		clientVersion := rs.getClientVersion()
 		if clientVersion != "" {
 			if _, err := fmt.Fprintf(safeW, "tunnel%02d_client_version=%s\n", i, clientVersion); err != nil {
-				rs.log.Error("Failed to write response", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to write response")
 			}
 		}
 		if rs.lastActivity.IsZero() {
 			if _, err := fmt.Fprintf(safeW, "tunnel%02d_idle_secs=NaN\n", i); err != nil {
-				rs.log.Error("Failed to write response", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to write response")
 			}
 			badTunnels++
 		} else {
 			if _, err := fmt.Fprintf(safeW, "tunnel%02d_idle_secs=%.1f\n", i, time.Since(rs.lastActivity).Seconds()); err != nil {
-				rs.log.Error("Failed to write response", "err", err)
+				rs.log.Error().Err(err).Msg("Failed to write response")
 			}
 			if time.Since(rs.lastActivity).Seconds() > 60 {
 				badTunnels++
@@ -518,20 +530,20 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 			rs.requestSetMutex.Lock()
 			if r, ok := rs.requestSet[rs.lastID]; ok {
 				if _, err := fmt.Fprintf(safeW, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr); err != nil {
-					rs.log.Error("Failed to write response", "err", err)
+					rs.log.Error().Err(err).Msg("Failed to write response")
 				}
 			}
 			rs.requestSetMutex.Unlock()
 		}
 	}
 	if _, err := fmt.Fprintln(safeW, ""); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 	if _, err := fmt.Fprintf(safeW, "req_pending=%d\n", reqPending); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 	if _, err := fmt.Fprintf(safeW, "dead_tunnels=%d\n", badTunnels); err != nil {
-		t.Log.Error("Failed to write response", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write response")
 	}
 }
 
@@ -543,7 +555,7 @@ func payloadHeaderHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 
 	tok := r.Header.Get("X-Token")
 	if tok == "" {
-		t.Log.Info("HTTP Missing X-Token header", "req", r)
+		t.Log.Info().Str("path", r.URL.Path).Msg("HTTP Missing X-Token header")
 		safeError(safeW, "Missing X-Token header", 400)
 		return
 	}
@@ -562,7 +574,7 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 	reqURL := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqURL)
 	if len(m) != 3 {
-		t.Log.Info("HTTP Missing token or URI", "url", reqURL)
+		t.Log.Info().Str("url", reqURL).Msg("HTTP Missing token or URI")
 		safeError(safeW, "Missing token in URI", 400)
 		return
 	}
@@ -570,7 +582,7 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 	// Parse the extracted URL and handle errors
 	parsedURL, err := url.Parse(m[2])
 	if err != nil {
-		t.Log.Info("HTTP Invalid URI format", "url", m[2], "err", err)
+		t.Log.Info().Str("url", m[2]).Err(err).Msg("HTTP Invalid URI format")
 		safeError(safeW, "Invalid URI format", 400)
 		return
 	}
@@ -585,7 +597,7 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 
 	// create the request object
 	req := makeRequest(r, t.HTTPTimeout)
-	req.log = t.Log.New("token", cutToken(tok))
+	req.log = t.Log.With().Str("token", cutToken(tok)).Logger()
 	//req.token = tok
 	//log_token := cutToken(tok)
 
@@ -613,8 +625,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	// get a hold of the remote server
 	rs := t.getRemoteServer(token(tok), false)
 	if rs == nil {
-		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "404",
-			"err", "Tunnel not found")
+		req.log.Info().Str("addr", req.remoteAddr).Str("status", "404").Str("err", "Tunnel not found").Msg("HTTP RCV")
 		// Set headers before calling WriteHeader to avoid superfluous warning
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -637,8 +648,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	// enqueue request
 	err := rs.AddRequest(req)
 	if err != nil {
-		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "504",
-			"err", err.Error())
+		req.log.Info().Str("addr", req.remoteAddr).Str("status", "504").Str("err", err.Error()).Msg("HTTP RCV")
 		safeError(w, err.Error(), http.StatusGatewayTimeout)
 		return
 	}
@@ -646,14 +656,13 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	if tries > 1 {
 		try = fmt.Sprintf("(attempt #%d)", tries)
 	}
-	req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
-		"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
+	req.log.Info().Str("verb", r.Method).Str("url", r.URL.String()).Str("addr", req.remoteAddr).Str("x-host", r.Header.Get("X-Host")).Str("try", try).Msg("HTTP RCV")
 
 	// Calculate timeout based on request deadline
 	timeoutRemaining := time.Until(req.deadline)
 	if timeoutRemaining <= 0 {
 		// Already past deadline
-		req.log.Info("HTTP RET", "status", "504", "err", "Request deadline already expired")
+		req.log.Info().Str("status", "504").Str("err", "Request deadline already expired").Msg("HTTP RET")
 		safeError(w, "Request deadline already expired", http.StatusGatewayTimeout)
 		return
 	}
@@ -664,22 +673,21 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 		// if there's no error just respond
 		if resp.err == nil {
 			code := writeResponse(w, resp.response)
-			req.log.Info("HTTP RET", "status", code)
+			req.log.Info().Int("status", code).Msg("HTTP RET")
 			return
 		}
 		// if it's a non-retryable error then write the error
 		if resp.err != ErrRetry {
-			req.log.Info("HTTP RET",
-				"status", "504", "err", resp.err.Error())
+			req.log.Info().Str("status", "504").Str("err", resp.err.Error()).Msg("HTTP RET")
 			safeError(w, resp.err.Error(), http.StatusGatewayTimeout)
 		} else {
 			// else we're gonna retry
-			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
+			req.log.Info().Str("verb", r.Method).Str("url", r.URL.String()).Msg("WS   retrying")
 			retry = true
 		}
 	case <-time.After(timeoutRemaining):
 		// it timed out...
-		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
+		req.log.Info().Str("status", "504").Str("err", "Tunnel timeout").Msg("HTTP RET")
 		safeError(w, "Tunnel timeout", http.StatusGatewayTimeout)
 	}
 	return
@@ -717,21 +725,21 @@ func normalizeBasePath(basePath string) string {
 	// Validate maximum length (prevent excessive memory usage)
 	const maxBasePathLength = 256
 	if len(basePath) > maxBasePathLength {
-		log15.Warn("Base path exceeds maximum length, ignoring", "basePath", basePath, "maxLength", maxBasePathLength)
+		pkgLog.Warn().Str("basePath", basePath).Int("maxLength", maxBasePathLength).Msg("Base path exceeds maximum length, ignoring")
 		return ""
 	}
 
 	// Check for path traversal attempts
 	if strings.Contains(basePath, "..") {
 		// Log warning and return empty to disable base path
-		log15.Warn("Base path contains path traversal sequence '..', ignoring", "basePath", basePath)
+		pkgLog.Warn().Str("basePath", basePath).Msg("Base path contains path traversal sequence '..', ignoring")
 		return ""
 	}
 
 	// Check for invalid characters (null bytes, control characters)
 	for i, r := range basePath {
 		if r == 0 || (r > 0 && r < 32) {
-			log15.Warn("Base path contains invalid control character, ignoring", "basePath", basePath, "position", i, "char", int(r))
+			pkgLog.Warn().Str("basePath", basePath).Int("position", i).Int("char", int(r)).Msg("Base path contains invalid control character, ignoring")
 			return ""
 		}
 	}
@@ -790,7 +798,11 @@ func shouldStripBasePath(requestPath, basePath string) bool {
 
 // Sanitize the token for logging
 func cutToken(tok token) string {
-	return string(tok)[0:8] + "..."
+	s := string(tok)
+	if len(s) <= 8 {
+		return s
+	}
+	return s[:8] + "..."
 }
 
 func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
@@ -800,12 +812,12 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 	// lookup and return existing remote server
 	rs, ok := t.serverRegistry[tok]
 	if ok {
-		t.Log.Debug("WS tunnel exists", "token", cutToken(tok))
+		t.Log.Debug().Str("token", cutToken(tok)).Msg("WS tunnel exists")
 		return rs
 	}
 
 	if !create { // return null if create flag is not set
-		t.Log.Info("WS tunnel not found", "token", cutToken(tok))
+		t.Log.Info().Str("token", cutToken(tok)).Msg("WS tunnel not found")
 		return nil
 	}
 
@@ -820,11 +832,11 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		lastActivity: time.Now(),
 		requestQueue: make(chan *remoteRequest, maxRequests),
 		requestSet:   make(map[int16]*remoteRequest),
-		log:          t.Log.New("token", cutToken(tok)),
+		log:          t.Log.With().Str("token", cutToken(tok)).Logger(),
 	}
 	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
-	t.Log.Info("WS new tunnel created", "token", cutToken(tok))
+	t.Log.Info().Str("token", cutToken(tok)).Msg("WS new tunnel created")
 	return rs
 }
 
@@ -845,7 +857,7 @@ l:
 		}
 	}
 	idle := time.Since(rs.lastActivity).Minutes()
-	rs.log.Info("WS tunnel closed", "inactive[min]", idle)
+	rs.log.Info().Float64("inactive[min]", idle).Msg("WS tunnel closed")
 }
 
 func (rs *remoteServer) AddRequest(req *remoteRequest) error {
@@ -854,7 +866,7 @@ func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 	if req.id < 0 {
 		rs.lastID = (rs.lastID + 1) % 32000
 		req.id = rs.lastID
-		req.log = req.log.New("id", req.id)
+		req.log = req.log.With().Int16("id", req.id).Logger()
 	}
 	rs.requestSet[req.id] = req
 	select {
@@ -907,7 +919,7 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 
 	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
-		log15.Info("WriteResponse: can't parse incoming response", "err", err)
+		pkgLog.Info().Err(err).Msg("WriteResponse: can't parse incoming response")
 		// Set headers before calling WriteHeader to avoid superfluous warning
 		safeW.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		safeW.Header().Set("X-Content-Type-Options", "nosniff")
@@ -921,23 +933,22 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 	copyHeader(safeW.Header(), resp.Header)
 	safeW.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(safeW, resp.Body); err != nil {
-		log15.Error("Error copying response body", "err", err)
+		pkgLog.Error().Err(err).Msg("Error copying response body")
 	}
 	if err := resp.Body.Close(); err != nil {
-		log15.Error("Failed to close response body", "err", err)
+		pkgLog.Error().Err(err).Msg("Failed to close response body")
 	}
 	return resp.StatusCode
 }
 
 // idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
 func (t *WSTunnelServer) idleTunnelReaper() {
-	t.Log.Debug("idleTunnelReaper started")
+	t.Log.Debug().Msg("idleTunnelReaper started")
 	for {
 		t.serverRegistryMutex.Lock()
 		for _, rs := range t.serverRegistry {
 			if time.Since(rs.lastActivity) > tunnelInactiveKillTimeout {
-				rs.log.Warn("Tunnel not seen for a long time, deleting",
-					"ago", time.Since(rs.lastActivity))
+				rs.log.Warn().Dur("ago", time.Since(rs.lastActivity)).Msg("Tunnel not seen for a long time, deleting")
 				// unlink so new tunnels/tokens use a new RemoteServer object
 				delete(t.serverRegistry, rs.token)
 				go rs.AbortRequests()

@@ -22,7 +22,7 @@ func NewClientImpl(client *WSTunnelClient) *ClientImpl {
 
 // Start starts the client
 func (ci *ClientImpl) Start() error {
-	ci.client.Log.Info("Starting wstunnel client")
+	ci.client.Log.Info().Msg("Starting wstunnel client")
 
 	// validate -server
 	if ci.client.InternalServer != nil {
@@ -61,12 +61,12 @@ func (ci *ClientImpl) Stop() {
 
 	if ci.client.conn != nil {
 		if err := ci.client.conn.ws.Close(); err != nil {
-			ci.client.Log.Error("Failed to close websocket", "err", err)
+			ci.client.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 	}
 	if ci.client.StatusFd != nil {
 		if err := ci.client.StatusFd.Close(); err != nil {
-			ci.client.Log.Error("Failed to close status file", "err", err)
+			ci.client.Log.Error().Err(err).Msg("Failed to close status file")
 		}
 	}
 }
@@ -83,7 +83,7 @@ func (ci *ClientImpl) startStatusWriter(handler *ConnectionHandler) {
 			stats := handler.GetStats()
 			if _, err := fmt.Fprintf(ci.client.StatusFd, "Connected: %v, Total Connections: %d, Failed Connections: %d, Last Error: %v\n",
 				handler.IsConnected(), stats.TotalConnections, stats.FailedConnections, stats.LastError); err != nil {
-				ci.client.Log.Error("Failed to write to status file", "err", err)
+				ci.client.Log.Error().Err(err).Msg("Failed to write to status file")
 			}
 		}
 	}

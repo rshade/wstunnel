@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // TestStatusHandlerWithClientVersion tests the status handler with client version
 func TestStatusHandlerWithClientVersion(t *testing.T) {
 	// Create a test server
 	ts := &WSTunnelServer{
-		Log:                 log15.Root(),
+		Log:                 zerolog.Nop(),
 		Host:                "0.0.0.0",
 		Port:                0,
 		exitChan:            make(chan struct{}),
@@ -31,7 +31,7 @@ func TestStatusHandlerWithClientVersion(t *testing.T) {
 	testToken := token("test-token")
 	rs := &remoteServer{
 		token:         testToken,
-		log:           ts.Log.New("token", "test-token"),
+		log:           ts.Log.With().Str("token", "test-token").Logger(),
 		requestQueue:  make(chan *remoteRequest, 100),
 		requestSet:    make(map[int16]*remoteRequest),
 		lastActivity:  time.Now(),
@@ -75,7 +75,7 @@ func TestStatusHandlerWithClientVersion(t *testing.T) {
 func TestStatusHandlerWithoutClientVersion(t *testing.T) {
 	// Create a test server
 	ts := &WSTunnelServer{
-		Log:                 log15.Root(),
+		Log:                 zerolog.Nop(),
 		Host:                "0.0.0.0",
 		Port:                0,
 		exitChan:            make(chan struct{}),
@@ -89,7 +89,7 @@ func TestStatusHandlerWithoutClientVersion(t *testing.T) {
 	testToken := token("test-token")
 	rs := &remoteServer{
 		token:         testToken,
-		log:           ts.Log.New("token", "test-token"),
+		log:           ts.Log.With().Str("token", "test-token").Logger(),
 		requestQueue:  make(chan *remoteRequest, 100),
 		requestSet:    make(map[int16]*remoteRequest),
 		lastActivity:  time.Now(),
@@ -187,7 +187,7 @@ func TestWsHandlerClientVersion(t *testing.T) {
 func TestMaxRequestsPerTunnel(t *testing.T) {
 	// Create a test server with custom max requests
 	ts := &WSTunnelServer{
-		Log:                  log15.Root(),
+		Log:                  zerolog.Nop(),
 		MaxRequestsPerTunnel: 5, // Set a low limit for testing
 		serverRegistry:       make(map[token]*remoteServer),
 		serverRegistryMutex:  sync.Mutex{},
@@ -207,7 +207,7 @@ func TestMaxRequestsPerTunnel(t *testing.T) {
 			id:        int16(i),
 			replyChan: make(chan responseBuffer, 1),
 			deadline:  time.Now().Add(30 * time.Second),
-			log:       rs.log.New("id", i),
+			log:       rs.log.With().Int("id", i).Logger(),
 		}
 		err := rs.AddRequest(req)
 		if err != nil {
@@ -221,7 +221,7 @@ func TestMaxRequestsPerTunnel(t *testing.T) {
 		id:        int16(99),
 		replyChan: make(chan responseBuffer, 1),
 		deadline:  time.Now().Add(30 * time.Second),
-		log:       rs.log.New("id", 99),
+		log:       rs.log.With().Int("id", 99).Logger(),
 	}
 	err := rs.AddRequest(extraReq)
 	if err == nil {
@@ -241,7 +241,7 @@ func TestMaxRequestsPerTunnel(t *testing.T) {
 func TestStatsHandlerWithLimits(t *testing.T) {
 	// Create a test server with custom limits
 	ts := &WSTunnelServer{
-		Log:                  log15.Root(),
+		Log:                  zerolog.Nop(),
 		MaxRequestsPerTunnel: 25,
 		MaxClientsPerToken:   3,
 		serverRegistry:       make(map[token]*remoteServer),

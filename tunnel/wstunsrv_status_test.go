@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // TestStatusEndpointConfigurationLimits tests that the status endpoint correctly reports configuration limits
@@ -19,7 +17,7 @@ func TestStatusEndpointConfigurationLimits(t *testing.T) {
 		"-max-requests-per-tunnel", "50",
 		"-max-clients-per-token", "10",
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// zerolog doesn't need handler setup
 
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -69,7 +67,7 @@ func TestStatusEndpointWithActiveClients(t *testing.T) {
 	srv := NewWSTunnelServer([]string{
 		"-max-clients-per-token", "5",
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// zerolog doesn't need handler setup
 
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -130,7 +128,7 @@ func TestStatusEndpointZeroLimits(t *testing.T) {
 		"-max-requests-per-tunnel", "0",
 		"-max-clients-per-token", "0",
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// zerolog doesn't need handler setup
 
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -184,7 +182,7 @@ func TestStatusEndpointZeroLimits(t *testing.T) {
 
 // TestStatusEndpointWriteErrors tests error handling in the status endpoint
 func TestStatusEndpointWriteErrors(t *testing.T) {
-	// Skip this test in race mode due to known race conditions in log15
+	// Skip this test in short mode
 	if testing.Short() {
 		t.Skip("Skipping test in short mode")
 	}
@@ -193,7 +191,7 @@ func TestStatusEndpointWriteErrors(t *testing.T) {
 	srv := NewWSTunnelServer([]string{
 		"-max-clients-per-token", "5",
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// zerolog doesn't need handler setup
 
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

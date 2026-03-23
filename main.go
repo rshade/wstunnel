@@ -9,27 +9,27 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rs/zerolog"
 	"github.com/rshade/wstunnel/tunnel"
 	"github.com/rshade/wstunnel/whois"
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // VV is the version string, set at build time using ldflags
 var VV string
 
+var logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+
 func init() { tunnel.SetVV(VV) } // propagate version
 
 func main() {
 	if len(os.Args) < 2 {
-		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv|whois|version] [-options...]", os.Args[0]))
-		os.Exit(1)
+		logger.Fatal().Msgf("Usage: %s [cli|srv|whois|version] [-options...]", os.Args[0])
 	}
 	switch os.Args[1] {
 	case "cli":
 		err := tunnel.NewWSTunnelClient(os.Args[2:]).Start()
 		if err != nil {
-			log15.Crit(err.Error())
-			os.Exit(1)
+			logger.Fatal().Err(err).Msg("Failed to start client")
 		}
 	case "srv":
 		tunnel.NewWSTunnelServer(os.Args[2:]).Start(nil)
@@ -40,19 +40,17 @@ func main() {
 		fmt.Println(VV)
 		os.Exit(0)
 	default:
-		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv] [-options...]", os.Args[0]))
-		os.Exit(1)
+		logger.Fatal().Msgf("Usage: %s [cli|srv|whois|version] [-options...]", os.Args[0])
 	}
 	<-make(chan struct{})
 }
 
 func lookupWhois(args []string) {
 	if len(args) != 2 {
-		log15.Crit("Usage: %s whois <whois-token> <ip-address>", os.Args[0])
-		os.Exit(1)
+		logger.Fatal().Msgf("Usage: %s whois <whois-token> <ip-address>", os.Args[0])
 	}
 	what := args[1]
 	names, _ := net.LookupAddr(what)
-	log15.Info("DNS   ", "addr", what, "dns", strings.Join(names, ","))
-	log15.Info("WHOIS ", "addr", what, "dns", whois.Whois(what, args[0]))
+	logger.Info().Str("addr", what).Str("dns", strings.Join(names, ",")).Msg("DNS")
+	logger.Info().Str("addr", what).Str("whois", whois.Whois(what, args[0])).Msg("WHOIS")
 }

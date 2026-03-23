@@ -6,8 +6,6 @@ import (
 	"net"
 	"strings"
 	"testing"
-
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 func TestNewWSTunnelServer_MaxRequestsPerTunnel_Validation(t *testing.T) {
@@ -57,9 +55,11 @@ func TestNewWSTunnelServer_MaxRequestsPerTunnel_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
+			// Capture log output with zerolog
 			var logOutput bytes.Buffer
-			log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			prevWriter := DefaultLogWriter
+			DefaultLogWriter = &logOutput
+			defer func() { DefaultLogWriter = prevWriter }()
 
 			server := NewWSTunnelServer(tt.args)
 			if server == nil {
@@ -129,9 +129,11 @@ func TestNewWSTunnelServer_MaxClientsPerToken_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
+			// Capture log output with zerolog
 			var logOutput bytes.Buffer
-			log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			prevWriter := DefaultLogWriter
+			DefaultLogWriter = &logOutput
+			defer func() { DefaultLogWriter = prevWriter }()
 
 			server := NewWSTunnelServer(tt.args)
 			if server == nil {
@@ -163,7 +165,9 @@ func TestNewWSTunnelServer_BothLimits(t *testing.T) {
 	}
 
 	var logOutput bytes.Buffer
-	log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+	prevWriter := DefaultLogWriter
+	DefaultLogWriter = &logOutput
+	defer func() { DefaultLogWriter = prevWriter }()
 
 	server := NewWSTunnelServer(args)
 	if server == nil {
@@ -261,7 +265,6 @@ func TestRemoteServerRequestQueueClamping(t *testing.T) {
 			if server == nil {
 				t.Fatal("Expected server to be created")
 			}
-			server.Log.SetHandler(log15.DiscardHandler())
 
 			// Initialize server registry before starting
 			if server.serverRegistry == nil {

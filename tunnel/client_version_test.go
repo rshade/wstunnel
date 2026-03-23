@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // TestClientVersionTracking tests that client version is properly tracked and displayed
@@ -97,7 +98,7 @@ func TestClientVersionHeader(t *testing.T) {
 	client := &WSTunnelClient{
 		Token:       "test-token",
 		Tunnel:      tunnelURL,
-		Log:         log15.Root(),
+		Log:         zerolog.New(os.Stderr),
 		exitChan:    make(chan struct{}),
 		connManager: NewConnectionManager(5*time.Second, 0),
 		Timeout:     30 * time.Second,

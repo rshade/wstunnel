@@ -1,5 +1,9 @@
 # WStunnel - Web Sockets Tunnel
 
+> **Note:** This project is not related to or forked from [erebe/wstunnel](https://github.com/erebe/wstunnel).
+> That project is a Rust-based general-purpose TCP/UDP tunnel.
+> This project is a Go-based HTTP-specific reverse tunnel with token-based multi-tenant routing.
+
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/rshade/wstunnel?utm_source=oss&utm_medium=github&utm_campaign=rshade%2Fwstunnel&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 - Master:
