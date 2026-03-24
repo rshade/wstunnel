@@ -395,6 +395,9 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 // constantTimeEquals performs a constant-time comparison of two strings to prevent timing attacks.
 // It hashes both inputs to fixed-size digests before comparing, preventing length leakage
 // that would occur with subtle.ConstantTimeCompare on variable-length inputs.
+// Note: SHA-256 is used here only to normalize input lengths for constant-time comparison,
+// NOT for password storage or hashing. CodeQL may flag this as "weak password hashing" but
+// that is a false positive — passwords are already stored in plaintext (loaded from CLI flags).
 func constantTimeEquals(a, b string) bool {
 	ah := sha256.Sum256([]byte(a))
 	bh := sha256.Sum256([]byte(b))
