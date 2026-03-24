@@ -34,7 +34,7 @@ func TestClientVersionTracking(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Make a request to ensure connection is established
@@ -134,7 +134,7 @@ func TestStatusEndpointWithoutClientVersion(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Make a request to ensure connection is established

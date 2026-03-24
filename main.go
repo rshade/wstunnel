@@ -17,7 +17,7 @@ import (
 // VV is the version string, set at build time using ldflags
 var VV string
 
-var logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+var logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 
 func init() { tunnel.SetVV(VV) } // propagate version
 
@@ -50,7 +50,11 @@ func lookupWhois(args []string) {
 		logger.Fatal().Msgf("Usage: %s whois <whois-token> <ip-address>", os.Args[0])
 	}
 	what := args[1]
-	names, _ := net.LookupAddr(what)
-	logger.Info().Str("addr", what).Str("dns", strings.Join(names, ",")).Msg("DNS")
+	names, err := net.LookupAddr(what)
+	if err != nil {
+		logger.Error().Str("addr", what).Err(err).Msg("DNS lookup failed")
+	} else {
+		logger.Info().Str("addr", what).Str("dns", strings.Join(names, ",")).Msg("DNS")
+	}
 	logger.Info().Str("addr", what).Str("whois", whois.Whois(what, args[0])).Msg("WHOIS")
 }

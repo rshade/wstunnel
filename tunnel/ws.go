@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
@@ -392,6 +393,10 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 }
 
 // constantTimeEquals performs a constant-time comparison of two strings to prevent timing attacks.
+// It hashes both inputs to fixed-size digests before comparing, preventing length leakage
+// that would occur with subtle.ConstantTimeCompare on variable-length inputs.
 func constantTimeEquals(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+	ah := sha256.Sum256([]byte(a))
+	bh := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(ah[:], bh[:]) == 1
 }

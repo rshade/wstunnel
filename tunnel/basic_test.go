@@ -110,7 +110,8 @@ type TestServer struct {
 }
 
 // startClient starts a tunnel client
-func (ts *TestServer) startClient() *WSTunnelClient {
+func (ts *TestServer) startClient(t *testing.T) *WSTunnelClient {
+	t.Helper()
 	ts.wstuncli = NewWSTunnelClient([]string{
 		"-token", ts.wstunToken,
 		"-tunnel", "ws://" + ts.wstunHost,
@@ -119,10 +120,9 @@ func (ts *TestServer) startClient() *WSTunnelClient {
 	})
 
 	if err := ts.wstuncli.Start(); err != nil {
-		basicTestLog.Error().Err(err).Msg("Error starting client")
-		os.Exit(1)
+		t.Fatalf("Error starting client: %v", err)
 	}
-	basicTestLog.Info().Str("serverURL", ts.server.URL).Str("token", ts.wstunToken).Msg("Client started")
+	basicTestLog.Info().Str("serverURL", ts.server.URL).Msg("Client started")
 	return ts.wstuncli
 }
 
@@ -326,7 +326,7 @@ func TestLargeRequest(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Initialize a large request
@@ -381,7 +381,7 @@ func TestLargeResponse(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Test the large response
@@ -430,7 +430,7 @@ func TestErrorStatus(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Test the error status
@@ -471,7 +471,7 @@ func TestMultipleRequests(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Test multiple requests
@@ -523,7 +523,7 @@ func TestMultipleRequestsWithSleeps(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Test multiple requests with sleeps
@@ -591,7 +591,7 @@ func TestWithProxy(t *testing.T) {
 	}))
 
 	// Start the client
-	ts.startClient()
+	ts.startClient(t)
 	ts.waitConnected()
 
 	// Test the hello request

@@ -131,8 +131,9 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var logLevel = cliFlag.String("log-level", "info", "log level (debug, info, warn, error)")
 	var logPretty = cliFlag.Bool("log-pretty", false, "use human-readable console log output")
 
-	// Create bootstrap logger for early logging
-	bootstrap := zerolog.New(getWriter(DefaultLogWriter)).With().Timestamp().Str("pkg", "WStuncli").Logger()
+	// Bootstrap logger for pre-flag-parse errors. Uses stderr directly since
+	// LogPretty is not yet available (flags haven't been parsed).
+	bootstrap := zerolog.New(DefaultLogWriter).With().Timestamp().Str("pkg", "WStuncli").Logger()
 
 	// Fix flag parsing
 	if err := cliFlag.Parse(args); err != nil {
