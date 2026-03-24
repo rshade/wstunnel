@@ -11,21 +11,21 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // ConnectionHandler handles the websocket connection lifecycle
 type ConnectionHandler struct {
 	client *WSTunnelClient
 	conn   *WSConnection
-	log    log15.Logger
+	log    zerolog.Logger
 }
 
 // NewConnectionHandler creates a new ConnectionHandler
 func NewConnectionHandler(client *WSTunnelClient) *ConnectionHandler {
 	return &ConnectionHandler{
 		client: client,
-		log:    client.Log.New("component", "connection_handler"),
+		log:    client.Log.With().Str("component", "connection_handler").Logger(),
 	}
 }
 
@@ -98,7 +98,7 @@ func (ch *ConnectionHandler) Connect() error {
 
 	// Create new connection
 	ch.conn = &WSConnection{
-		Log: ch.log.New("ws", fmt.Sprintf("%p", ws)),
+		Log: ch.log.With().Str("ws", fmt.Sprintf("%p", ws)).Logger(),
 		ws:  ws,
 		tun: ch.client,
 	}
@@ -107,9 +107,8 @@ func (ch *ConnectionHandler) Connect() error {
 	ch.client.connManager.RecordSuccess()
 	ch.client.setConnected(true)
 
-	// Start connection handlers
+	// Start connection handlers (handleRequests spawns pinger internally)
 	go ch.conn.handleRequests()
-	go ch.conn.pinger()
 
 	return nil
 }
@@ -117,7 +116,7 @@ func (ch *ConnectionHandler) Connect() error {
 // Disconnect closes the current websocket connection
 func (ch *ConnectionHandler) Disconnect() error {
 	if ch.conn != nil && ch.conn.ws != nil {
-		ch.log.Info("Closing websocket connection")
+		ch.log.Info().Msg("Closing websocket connection")
 		err := ch.conn.ws.Close()
 		ch.conn = nil
 		ch.client.conn = nil
@@ -131,7 +130,7 @@ func (ch *ConnectionHandler) Disconnect() error {
 func (ch *ConnectionHandler) Reconnect() error {
 	// Disconnect existing connection if any
 	if err := ch.Disconnect(); err != nil {
-		ch.log.Warn("Error disconnecting existing connection", "err", err)
+		ch.log.Warn().Err(err).Msg("Error disconnecting existing connection")
 	}
 
 	// Try to connect with retry logic
@@ -141,7 +140,7 @@ func (ch *ConnectionHandler) Reconnect() error {
 			return nil
 		}
 
-		ch.log.Error("Connection failed", "err", err)
+		ch.log.Error().Err(err).Msg("Connection failed")
 
 		// Check if we should retry (error was already recorded in Connect)
 		if !ch.client.connManager.ShouldRetry() {
@@ -150,7 +149,7 @@ func (ch *ConnectionHandler) Reconnect() error {
 
 		// Calculate delay before next attempt
 		delay := ch.client.connManager.GetRetryDelay()
-		ch.log.Info("Retrying connection", "delay", delay)
+		ch.log.Info().Dur("delay", delay).Msg("Retrying connection")
 
 		// Wait for delay or exit signal
 		select {

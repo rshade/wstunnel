@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // TestMaxClientsPerTokenNoRace tests the max clients per token configuration through actual WebSocket connections
@@ -32,7 +31,7 @@ func TestMaxClientsPerTokenNoRace(t *testing.T) {
 		"-wstimeout", "5",
 		"-max-clients-per-token", "2", // Allow only 2 clients per token
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// Zerolog doesn't use handlers; logs go to DefaultLogWriter
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -196,7 +195,7 @@ func TestMaxClientsPerTokenConcurrentNoRace(t *testing.T) {
 		"-wstimeout", "5",
 		"-max-clients-per-token", "3", // Allow only 3 clients per token
 	})
-	srv.Log.SetHandler(log15.DiscardHandler())
+	// Zerolog doesn't use handlers; logs go to DefaultLogWriter
 	// Start tunnel server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

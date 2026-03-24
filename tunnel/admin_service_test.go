@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // setupTestAdminService creates a temporary database and admin service for testing
@@ -38,7 +38,7 @@ func setupTestAdminService(t *testing.T) (*AdminService, func()) {
 
 	// Create mock server
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -174,7 +174,7 @@ func TestGetMonitoringStats(t *testing.T) {
 
 	// Create mock server with some tunnels
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -256,7 +256,7 @@ func TestGetAuditingData(t *testing.T) {
 
 	// Create mock server with some tunnels
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -476,7 +476,7 @@ func TestAdminServiceBasePathIntegration(t *testing.T) {
 
 	// Create mock server with base path
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		BasePath:       "/wstunnel",
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
@@ -523,7 +523,7 @@ func TestHandleAPIDocs(t *testing.T) {
 
 	// Create mock server
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -626,7 +626,7 @@ func TestHandleAdminUI(t *testing.T) {
 
 	// Create mock server
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -708,7 +708,7 @@ func TestHandleAdminUIRedirect(t *testing.T) {
 
 	// Create mock server
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}
@@ -774,7 +774,7 @@ func TestGetAPIDocumentation(t *testing.T) {
 
 	// Create mock server
 	server := &WSTunnelServer{
-		Log:            log15.New("pkg", "test"),
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
 	}

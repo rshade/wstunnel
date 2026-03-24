@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // TestNewClientImpl tests the NewClientImpl constructor
 func TestNewClientImpl(t *testing.T) {
 	client := &WSTunnelClient{
-		Log: log15.New("pkg", "test"),
+		Log: zerolog.Nop(),
 	}
 
 	impl := NewClientImpl(client)
@@ -41,7 +41,7 @@ func TestClientImpl_Start_ValidationErrors(t *testing.T) {
 				return &WSTunnelClient{
 					Server:      "localhost:8080", // missing http:// or https://
 					Tunnel:      tunnelURL,
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					exitChan:    make(chan struct{}),
 					connManager: NewConnectionManager(time.Second, 3),
 				}
@@ -104,7 +104,7 @@ func TestClientImpl_Start_ServerValidation(t *testing.T) {
 				Server:         tt.server,
 				InternalServer: tt.internalServer,
 				Tunnel:         tunnelURL,
-				Log:            log15.New("pkg", "test"),
+				Log:            zerolog.Nop(),
 				exitChan:       make(chan struct{}),
 				connManager:    NewConnectionManager(time.Second, 3),
 			}
@@ -139,7 +139,7 @@ func TestClientImpl_GetStats(t *testing.T) {
 			name: "nil connection manager",
 			setupClient: func() *WSTunnelClient {
 				return &WSTunnelClient{
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					connManager: nil,
 				}
 			},
@@ -154,7 +154,7 @@ func TestClientImpl_GetStats(t *testing.T) {
 				connManager.stats.RecordRequest(true)
 
 				return &WSTunnelClient{
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					connManager: connManager,
 				}
 			},
@@ -203,7 +203,7 @@ func TestClientImpl_IsConnected(t *testing.T) {
 			name: "disconnected client",
 			setupClient: func() *WSTunnelClient {
 				return &WSTunnelClient{
-					Log:       log15.New("pkg", "test"),
+					Log:       zerolog.Nop(),
 					Connected: false,
 					conn:      nil,
 				}
@@ -214,7 +214,7 @@ func TestClientImpl_IsConnected(t *testing.T) {
 			name: "connected client without websocket",
 			setupClient: func() *WSTunnelClient {
 				return &WSTunnelClient{
-					Log:       log15.New("pkg", "test"),
+					Log:       zerolog.Nop(),
 					Connected: true,
 					conn:      nil,
 				}
@@ -225,7 +225,7 @@ func TestClientImpl_IsConnected(t *testing.T) {
 			name: "connected client with websocket but nil ws",
 			setupClient: func() *WSTunnelClient {
 				return &WSTunnelClient{
-					Log:       log15.New("pkg", "test"),
+					Log:       zerolog.Nop(),
 					Connected: true,
 					conn:      &WSConnection{ws: nil},
 				}
@@ -268,7 +268,7 @@ func TestClientImpl_GetLastError(t *testing.T) {
 			name: "nil connection manager",
 			setupClient: func() *WSTunnelClient {
 				return &WSTunnelClient{
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					connManager: nil,
 				}
 			},
@@ -281,7 +281,7 @@ func TestClientImpl_GetLastError(t *testing.T) {
 				connManager.RecordError(errors.New("test error"))
 
 				return &WSTunnelClient{
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					connManager: connManager,
 				}
 			},
@@ -293,7 +293,7 @@ func TestClientImpl_GetLastError(t *testing.T) {
 				connManager := NewConnectionManager(time.Second, 3)
 
 				return &WSTunnelClient{
-					Log:         log15.New("pkg", "test"),
+					Log:         zerolog.Nop(),
 					connManager: connManager,
 				}
 			},
@@ -331,7 +331,7 @@ func TestClientImpl_Stop(t *testing.T) {
 	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	client := &WSTunnelClient{
-		Log:      log15.New("pkg", "test"),
+		Log:      zerolog.Nop(),
 		exitChan: make(chan struct{}),
 		StatusFd: tmpFile,
 		conn:     nil, // Set to nil to avoid websocket close errors

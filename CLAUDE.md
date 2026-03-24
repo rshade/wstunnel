@@ -47,7 +47,7 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 - **Logging**: Use log15 with structured key-value pairs
 - **Tests**: Use standard Go testing with table-driven tests
 - **Blank Identifiers**: Don't use unused blank identifiers like `var _ fmt.Formatter`
-- **Go Version**: Use `go 1.24` format in go.mod (not `go 1.24.0`)
+- **Go Version**: Use `go 1.25.8` in go.mod (pinned, not managed by Renovate)
 
 ## Architecture Patterns
 - **Goroutine per request**: Each HTTP request gets its own goroutine for concurrent handling
@@ -67,7 +67,7 @@ WStunnel is a WebSocket-based reverse HTTP/HTTPS tunneling solution that enables
 ## Testing Approach
 - Integration tests use actual HTTP servers and tunnel components
 - Tests cover authentication, proxies, failures, timeouts, concurrent requests
-- Use `testutil.TestLogLevel()` to control log verbosity in tests
+- Use `testutil.SetupLogging()` to suppress log output in tests
 - Port allocation uses `:0` to get random available ports
 - Use standard Go testing package with table-driven tests
 - Test files should be named `*_test.go` and placed alongside the code they test

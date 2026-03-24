@@ -67,6 +67,12 @@
         "dependencies",
         "breaking"
       ]
+    },
+    {
+      "description": "Do not update Go version in go.mod or workflows",
+      "matchDepNames": ["go", "golang"],
+      "matchManagers": ["gomod", "github-actions"],
+      "enabled": false
     }
   ],
   "lockFileMaintenance": {
@@ -75,9 +81,12 @@
     "automergeType": "pr"
   },
   "constraints": {
-    "go": "1.24"
+    "go": "1.25.8"
   },
-  "ignoreDeps": [],
+  "ignoreDeps": [
+    "go",
+    "golang"
+  ],
   "schedule": [
     "before 5am"
   ],

@@ -6,8 +6,6 @@ import (
 	"net"
 	"strings"
 	"testing"
-
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
 func TestNewWSTunnelServer_MaxRequestsPerTunnel_Validation(t *testing.T) {
@@ -57,9 +55,11 @@ func TestNewWSTunnelServer_MaxRequestsPerTunnel_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
+			// Capture log output with zerolog
 			var logOutput bytes.Buffer
-			log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			prevWriter := DefaultLogWriter
+			DefaultLogWriter = &logOutput
+			defer func() { DefaultLogWriter = prevWriter }()
 
 			server := NewWSTunnelServer(tt.args)
 			if server == nil {
@@ -129,9 +129,11 @@ func TestNewWSTunnelServer_MaxClientsPerToken_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
+			// Capture log output with zerolog
 			var logOutput bytes.Buffer
-			log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			prevWriter := DefaultLogWriter
+			DefaultLogWriter = &logOutput
+			defer func() { DefaultLogWriter = prevWriter }()
 
 			server := NewWSTunnelServer(tt.args)
 			if server == nil {
@@ -163,7 +165,9 @@ func TestNewWSTunnelServer_BothLimits(t *testing.T) {
 	}
 
 	var logOutput bytes.Buffer
-	log15.Root().SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+	prevWriter := DefaultLogWriter
+	DefaultLogWriter = &logOutput
+	defer func() { DefaultLogWriter = prevWriter }()
 
 	server := NewWSTunnelServer(args)
 	if server == nil {
@@ -224,6 +228,60 @@ func TestNewWSTunnelServer_TokenClientsMapInitialization(t *testing.T) {
 	}
 }
 
+func TestNewWSTunnelServer_LogLevel(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		expectLog string
+	}{
+		{name: "default log level", args: []string{"-port", "0"}, expectLog: ""},
+		{name: "debug log level", args: []string{"-port", "0", "-log-level", "debug"}, expectLog: ""},
+		{name: "warn log level", args: []string{"-port", "0", "-log-level", "warn"}, expectLog: ""},
+		{name: "invalid log level", args: []string{"-port", "0", "-log-level", "badlevel"}, expectLog: "Invalid log level, using info"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logOutput := setupLogCapture(t)
+
+			server := NewWSTunnelServer(tt.args)
+			if server == nil {
+				t.Fatal("Expected server to be created")
+			}
+
+			logStr := logOutput.String()
+			if tt.expectLog != "" && !strings.Contains(logStr, tt.expectLog) {
+				t.Errorf("Expected log to contain %q, got: %s", tt.expectLog, logStr)
+			}
+		})
+	}
+}
+
+func TestNewWSTunnelServer_LogPretty(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected bool
+	}{
+		{name: "default false", args: []string{"-port", "0"}, expected: false},
+		{name: "set to true", args: []string{"-port", "0", "-log-pretty"}, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupLogCapture(t)
+
+			server := NewWSTunnelServer(tt.args)
+			if server == nil {
+				t.Fatal("Expected server to be created")
+			}
+			if LogPretty != tt.expected {
+				t.Errorf("Expected LogPretty=%v, got %v", tt.expected, LogPretty)
+			}
+		})
+	}
+}
+
 func TestRemoteServerRequestQueueClamping(t *testing.T) {
 	// Test that request queue size is clamped to 1000 for very large values
 	tests := []struct {
@@ -261,7 +319,6 @@ func TestRemoteServerRequestQueueClamping(t *testing.T) {
 			if server == nil {
 				t.Fatal("Expected server to be created")
 			}
-			server.Log.SetHandler(log15.DiscardHandler())
 
 			// Initialize server registry before starting
 			if server.serverRegistry == nil {

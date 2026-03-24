@@ -3,16 +3,14 @@
 package testutil
 
 import (
-	"io"
 	"testing"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
-// SetupLogging configures log15 to discard all logs during tests
+// SetupLogging configures zerolog to discard all logs during tests
 func SetupLogging() {
-	logWriter := io.Discard // discard logs by default
-	log15.Root().SetHandler(log15.StreamHandler(logWriter, log15.TerminalFormat()))
+	zerolog.SetGlobalLevel(zerolog.Disabled)
 }
 
 // RunTests runs the test suite with proper setup and returns the exit code

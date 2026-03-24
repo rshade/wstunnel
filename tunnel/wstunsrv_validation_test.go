@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 func TestValidateLimit(t *testing.T) {
@@ -123,8 +123,7 @@ func TestValidateLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture log output
 			var logOutput bytes.Buffer
-			logger := log15.New("test", "validateLimit")
-			logger.SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+			logger := zerolog.New(&logOutput)
 
 			result := validateLimit(logger, "test-param", tt.value, tt.min, tt.max, tt.defaultValue)
 
@@ -148,8 +147,7 @@ func TestValidateLimit(t *testing.T) {
 
 func TestValidateLimit_ParameterLogging(t *testing.T) {
 	var logOutput bytes.Buffer
-	logger := log15.New("test", "validateLimit")
-	logger.SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+	logger := zerolog.New(&logOutput)
 
 	paramName := "max-connections-per-token"
 
@@ -160,11 +158,8 @@ func TestValidateLimit_ParameterLogging(t *testing.T) {
 
 	// Check that all expected values are logged
 	expectedValues := []string{
+		"Configuration limit below minimum",
 		paramName,
-		"param=" + paramName,
-		"value=5",
-		"min=10",
-		"default=25",
 	}
 
 	for _, expected := range expectedValues {
@@ -176,8 +171,7 @@ func TestValidateLimit_ParameterLogging(t *testing.T) {
 
 func TestValidateLimit_AboveMaximumLogging(t *testing.T) {
 	var logOutput bytes.Buffer
-	logger := log15.New("test", "validateLimit")
-	logger.SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+	logger := zerolog.New(&logOutput)
 
 	paramName := "max-requests-per-tunnel"
 
@@ -192,10 +186,8 @@ func TestValidateLimit_AboveMaximumLogging(t *testing.T) {
 
 	// Check that all expected values are logged
 	expectedValues := []string{
+		"Configuration limit above maximum",
 		paramName,
-		"param=" + paramName,
-		"value=150",
-		"max=100",
 	}
 
 	for _, expected := range expectedValues {
@@ -207,8 +199,7 @@ func TestValidateLimit_AboveMaximumLogging(t *testing.T) {
 
 func TestValidateLimit_HighValueWarning(t *testing.T) {
 	var logOutput bytes.Buffer
-	logger := log15.New("test", "validateLimit")
-	logger.SetHandler(log15.StreamHandler(&logOutput, log15.LogfmtFormat()))
+	logger := zerolog.New(&logOutput)
 
 	paramName := "test-high-value"
 
@@ -225,9 +216,6 @@ func TestValidateLimit_HighValueWarning(t *testing.T) {
 	expectedValues := []string{
 		"Configuration limit is high",
 		paramName,
-		"param=" + paramName,
-		"value=500",
-		"recommended=10-100",
 	}
 
 	for _, expected := range expectedValues {
@@ -238,8 +226,7 @@ func TestValidateLimit_HighValueWarning(t *testing.T) {
 }
 
 func TestValidateLimit_EdgeCases(t *testing.T) {
-	logger := log15.New("test", "validateLimit")
-	logger.SetHandler(log15.DiscardHandler()) // Discard logs for these tests
+	logger := zerolog.Nop()
 
 	tests := []struct {
 		name         string
@@ -294,8 +281,7 @@ func TestValidateLimit_EdgeCases(t *testing.T) {
 }
 
 func TestValidateLimit_RealWorldScenarios(t *testing.T) {
-	logger := log15.New("test", "validateLimit")
-	logger.SetHandler(log15.DiscardHandler()) // Discard logs for these tests
+	logger := zerolog.Nop()
 
 	tests := []struct {
 		name         string

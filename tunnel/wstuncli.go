@@ -32,7 +32,6 @@ import (
 	"regexp"
 	"runtime"
 
-	//"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"flag"
@@ -51,7 +50,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 )
 
 // WSTunnelClient represents a persistent tunnel that can cycle through many websockets. The
@@ -69,7 +68,7 @@ type WSTunnelClient struct {
 	Cert           string         // accept provided certificate from local HTTPS servers
 	Timeout        time.Duration  // timeout on websocket
 	Proxy          *url.URL       // if non-nil, external proxy to use
-	Log            log15.Logger   // logger with "pkg=WStuncli"
+	Log            zerolog.Logger // logger with "pkg=WStuncli"
 	StatusFd       *os.File       // output periodic tunnel status information
 	Connected      bool           // true when we have an active connection to wstunsrv
 	connMutex      sync.RWMutex   // protects Connected field
@@ -82,7 +81,7 @@ type WSTunnelClient struct {
 
 // WSConnection represents a single websocket connection
 type WSConnection struct {
-	Log log15.Logger    // logger with "ws=0x1234"
+	Log zerolog.Logger  // logger with "ws=0x1234"
 	ws  *websocket.Conn // websocket connection
 	tun *WSTunnelClient // link back to tunnel
 }
@@ -129,18 +128,35 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var cliports = cliFlag.String("client-ports", "",
 		"comma separated list of client listening ports ex: -client-ports 8000..8100,8300..8400,8500,8505")
 	cliFlag.StringVar(&wstunCli.Cert, "certfile", "", "path for trusted certificate in PEM-encoded format")
+	var logLevel = cliFlag.String("log-level", "info", "log level (debug, info, warn, error)")
+	var logPretty = cliFlag.Bool("log-pretty", false, "use human-readable console log output")
+
+	// Bootstrap logger for pre-flag-parse errors. Uses stderr directly since
+	// LogPretty is not yet available (flags haven't been parsed).
+	bootstrap := zerolog.New(DefaultLogWriter).With().Timestamp().Str("pkg", "WStuncli").Logger()
 
 	// Fix flag parsing
 	if err := cliFlag.Parse(args); err != nil {
-		wstunCli.Log.Crit("Failed to parse client flags", "err", err)
+		bootstrap.Fatal().Err(err).Msg("Failed to parse client flags")
 		return nil
 	}
 
+	LogPretty = *logPretty
 	wstunCli.Log = makeLogger("WStuncli", *logf, "")
+	pkgLog = newPkgLogger()
 	if err := writePid(*pidf); err != nil {
-		wstunCli.Log.Error("Failed to write pidfile", "err", err)
+		wstunCli.Log.Error().Err(err).Msg("Failed to write pidfile")
 	}
-	wstunCli.Timeout = calcWsTimeout(*tout)
+
+	// Set log level
+	level, err := zerolog.ParseLevel(*logLevel)
+	if err != nil {
+		wstunCli.Log.Warn().Str("level", *logLevel).Msg("Invalid log level, using info")
+		level = zerolog.InfoLevel
+	}
+	zerolog.SetGlobalLevel(level)
+
+	wstunCli.Timeout = calcWsTimeout(wstunCli.Log, *tout)
 
 	// Parse token:password format
 	if *tokenArg != "" {
@@ -155,8 +171,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	if *statf != "" {
 		fd, err := os.Create(*statf)
 		if err != nil {
-			log15.Crit("Can't create statusfile", "err", err.Error())
-			os.Exit(1)
+			bootstrap.Fatal().Err(err).Msg("Can't create statusfile")
 		}
 		wstunCli.StatusFd = fd
 	}
@@ -166,27 +181,23 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		var err error
 		wstunCli.Regexp, err = regexp.Compile(*sre)
 		if err != nil {
-			log15.Crit("Can't parse -regexp", "err", err.Error())
-			os.Exit(1)
+			bootstrap.Fatal().Err(err).Msg("Can't parse -regexp")
 		}
 	}
 
 	if *tunnel != "" {
 		tunnelUrl, err := url.Parse(*tunnel)
 		if err != nil {
-			log15.Crit(fmt.Sprintf("Invalid tunnel address: %q, %v", *tunnel, err))
-			os.Exit(1)
+			bootstrap.Fatal().Err(err).Str("tunnel", *tunnel).Msg("Invalid tunnel address")
 		}
 
 		if tunnelUrl.Scheme != "ws" && tunnelUrl.Scheme != "wss" {
-			log15.Crit("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
-			os.Exit(1)
+			bootstrap.Fatal().Msg("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
 		}
 
 		wstunCli.Tunnel = tunnelUrl
 	} else {
-		log15.Crit("Must specify tunnel server ws://hostname:port using -tunnel option")
-		os.Exit(1)
+		bootstrap.Fatal().Msg("Must specify tunnel server ws://hostname:port using -tunnel option")
 	}
 
 	// process -proxy or look for standard unix env variables
@@ -206,8 +217,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 			// see if that parses correctly. If not, we fall
 			// through and complain about the original one.
 			if proxyURL, err = url.Parse("http://" + *proxy); err != nil {
-				log15.Crit(fmt.Sprintf("Invalid proxy address: %q, %v", *proxy, err))
-				os.Exit(1)
+				bootstrap.Fatal().Err(err).Str("proxy", *proxy).Msg("Invalid proxy address")
 			}
 		}
 
@@ -217,26 +227,23 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	if *cliports != "" {
 		portList := strings.Split(*cliports, ",")
 		clientPorts := []int{}
-		log15.Info("Attempting to start client with ports: " + *cliports)
+		bootstrap.Info().Str("ports", *cliports).Msg("Attempting to start client with ports")
 
 		for _, v := range portList {
 			if strings.Contains(v, "..") {
 				k := strings.Split(v, "..")
 				bInt, err := strconv.Atoi(k[0])
 				if err != nil {
-					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[0], v))
-					os.Exit(1)
+					bootstrap.Fatal().Str("port", k[0]).Str("range", v).Msg("Invalid Port Assignment")
 				}
 
 				eInt, err := strconv.Atoi(k[1])
 				if err != nil {
-					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[1], v))
-					os.Exit(1)
+					bootstrap.Fatal().Str("port", k[1]).Str("range", v).Msg("Invalid Port Assignment")
 				}
 
 				if eInt < bInt {
-					log15.Crit(fmt.Sprintf("End port %d can not be less than beginning port %d", eInt, bInt))
-					os.Exit(1)
+					bootstrap.Fatal().Int("start", bInt).Int("end", eInt).Msg("End port can not be less than beginning port")
 				}
 
 				for n := bInt; n <= eInt; n++ {
@@ -246,8 +253,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 			} else {
 				intPort, err := strconv.Atoi(v)
 				if err != nil {
-					log15.Crit(fmt.Sprintf("Can not convert %q to integer", v))
-					os.Exit(1)
+					bootstrap.Fatal().Str("value", v).Msg("Can not convert to integer")
 				}
 				clientPorts = append(clientPorts, intPort)
 			}
@@ -263,7 +269,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 
 // Start creates the wstunnel connection.
 func (t *WSTunnelClient) Start() error {
-	t.Log.Info(VV)
+	t.Log.Info().Msg(VV)
 
 	// validate -server
 	if t.InternalServer != nil {
@@ -282,7 +288,7 @@ func (t *WSTunnelClient) Start() error {
 
 	tlsClientConfig := tls.Config{}
 	if t.Insecure {
-		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
+		t.Log.Info().Msg("Accepting unverified SSL certs from local HTTPS servers")
 		tlsClientConfig.InsecureSkipVerify = t.Insecure
 	}
 	if t.Cert != "" {
@@ -300,7 +306,7 @@ func (t *WSTunnelClient) Start() error {
 		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
 			return fmt.Errorf("failed to appended certificate file %q to pool: %v", t.Cert, err)
 		}
-		t.Log.Info("Explicitly accepting provided SSL certificate")
+		t.Log.Info().Msg("Explicitly accepting provided SSL certificate")
 		tlsClientConfig.RootCAs = rootCAs
 	}
 	httpClient = http.Client{
@@ -310,9 +316,9 @@ func (t *WSTunnelClient) Start() error {
 	}
 
 	if t.InternalServer != nil {
-		t.Log.Info("Dispatching to internal server")
+		t.Log.Info().Msg("Dispatching to internal server")
 	} else if t.Server != "" || t.Regexp != nil {
-		t.Log.Info("Dispatching to external server(s)", "server", t.Server, "regexp", t.Regexp)
+		t.Log.Info().Str("server", t.Server).Interface("regexp", t.Regexp).Msg("Dispatching to external server(s)")
 	} else {
 		return fmt.Errorf("must specify internal server or server or regexp")
 	}
@@ -322,7 +328,7 @@ func (t *WSTunnelClient) Start() error {
 		if u := t.Proxy.User; u != nil {
 			username = u.Username()
 		}
-		t.Log.Info("Using HTTPS proxy", "url", t.Proxy.Host, "user", username)
+		t.Log.Info().Str("url", t.Proxy.Host).Str("user", username).Msg("Using HTTPS proxy")
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
@@ -366,7 +372,7 @@ func (t *WSTunnelClient) Start() error {
 			}
 			url := fmt.Sprintf("%s://%s/_tunnel", t.Tunnel.Scheme, t.Tunnel.Host)
 			timer := time.NewTimer(10 * time.Second)
-			t.Log.Info("WS   Opening", "url", url, "token", t.Token[0:5]+"...")
+			t.Log.Info().Str("url", url).Msg("WS   Opening")
 			ws, resp, err := d.Dial(url, h)
 			if err != nil {
 				extra := ""
@@ -375,21 +381,20 @@ func (t *WSTunnelClient) Start() error {
 					buf := make([]byte, 80)
 					n, err := resp.Body.Read(buf)
 					if err != nil && err != io.EOF {
-						t.Log.Error("Failed to read response body", "err", err)
+						t.Log.Error().Err(err).Msg("Failed to read response body")
 						return
 					}
 					if len(buf) > 0 {
 						extra = extra + " -- " + string(buf[:n])
 					}
 					if err := resp.Body.Close(); err != nil {
-						t.Log.Error("Failed to close response body", "err", err)
+						t.Log.Error().Err(err).Msg("Failed to close response body")
 					}
 				}
-				t.Log.Error("Error opening connection",
-					"err", err.Error(), "info", extra)
+				t.Log.Error().Err(err).Str("info", extra).Msg("Error opening connection")
 			} else {
 				t.conn = &WSConnection{ws: ws, tun: t,
-					Log: t.Log.New("ws", fmt.Sprintf("%p", ws))}
+					Log: t.Log.With().Str("ws", fmt.Sprintf("%p", ws)).Logger()}
 				// Safety setting
 				ws.SetReadLimit(100 * 1024 * 1024)
 				// Request Loop
@@ -397,7 +402,7 @@ func (t *WSTunnelClient) Start() error {
 				if t.InternalServer != nil {
 					srv = "<internal>"
 				}
-				t.conn.Log.Info("WS   ready", "server", srv)
+				t.conn.Log.Info().Str("server", srv).Msg("WS   ready")
 				t.setConnected(true)
 				t.conn.handleRequests()
 				t.setConnected(false)
@@ -425,7 +430,7 @@ func (t *WSTunnelClient) Stop() {
 	t.exitChan <- struct{}{}
 	if t.conn != nil && t.conn.ws != nil {
 		if err := t.conn.ws.Close(); err != nil {
-			t.Log.Error("Failed to close websocket", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 	}
 }
@@ -436,23 +441,23 @@ func (wsc *WSConnection) handleRequests() {
 	go wsc.pinger()
 	for {
 		if err := wsc.ws.SetReadDeadline(time.Time{}); err != nil {
-			wsc.Log.Error("Failed to set read deadline", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to set read deadline")
 			return
 		}
 		typ, r, err := wsc.ws.NextReader()
 		if err != nil {
-			wsc.Log.Info("WS   ReadMessage", "err", err.Error())
+			wsc.Log.Info().Err(err).Msg("WS   ReadMessage")
 			break
 		}
 		if typ != websocket.BinaryMessage {
-			wsc.Log.Warn("WS   invalid message type", "type", typ)
+			wsc.Log.Warn().Int("type", int(typ)).Msg("WS   invalid message type")
 			break
 		}
 		// read request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
 		if err != nil {
-			wsc.Log.Warn("WS   cannot read request ID", "err", err.Error())
+			wsc.Log.Warn().Err(err).Msg("WS   cannot read request ID")
 			break
 		}
 		// read the whole message, this is bounded (to something large) by the
@@ -461,18 +466,18 @@ func (wsc *WSConnection) handleRequests() {
 		// websocket doesn't allow us to have multiple goroutines reading...
 		buf, err := io.ReadAll(r)
 		if err != nil {
-			wsc.Log.Warn("WS   cannot read request message", "id", id, "err", err.Error())
+			wsc.Log.Warn().Int16("id", id).Err(err).Msg("WS   cannot read request message")
 			break
 		}
 		if len(buf) > 1024*1024 {
-			wsc.Log.Info("WS   long message", "len", len(buf))
+			wsc.Log.Info().Int("len", len(buf)).Msg("WS   long message")
 		}
-		wsc.Log.Debug("WS   message", "len", len(buf))
+		wsc.Log.Debug().Int("len", len(buf)).Msg("WS   message")
 		r = bytes.NewReader(buf)
 		// read request itself
 		req, err := http.ReadRequest(bufio.NewReader(r))
 		if err != nil {
-			wsc.Log.Warn("WS   cannot read request body", "id", id, "err", err.Error())
+			wsc.Log.Warn().Int16("id", id).Err(err).Msg("WS   cannot read request body")
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request
@@ -486,7 +491,7 @@ func (wsc *WSConnection) handleRequests() {
 	go func() {
 		time.Sleep(5 * time.Second)
 		if err := wsc.ws.Close(); err != nil {
-			wsc.Log.Error("Failed to close websocket", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 	}()
 }
@@ -499,10 +504,10 @@ func (wsc *WSConnection) pinger() {
 		// panics may occur in WriteControl (in unit tests at least) for closed
 		// websocket connections
 		if x := recover(); x != nil {
-			wsc.Log.Error("Panic in pinger", "err", x)
+			wsc.Log.Error().Interface("err", x).Msg("Panic in pinger")
 		}
 	}()
-	wsc.Log.Info("pinger starting")
+	wsc.Log.Info().Msg("pinger starting")
 	tunTimeout := wsc.tun.Timeout
 
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
@@ -511,14 +516,14 @@ func (wsc *WSConnection) pinger() {
 			return
 		}
 		if err := wsc.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second)); err != nil {
-			wsc.Log.Error("Failed to send close message", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to send close message")
 			// Don't return error on close
 		}
-		wsc.Log.Info("ping timeout, closing WS")
+		wsc.Log.Info().Msg("ping timeout, closing WS")
 		time.Sleep(5 * time.Second)
 		if wsc.ws != nil {
 			if err := wsc.ws.Close(); err != nil {
-				wsc.Log.Error("Failed to close websocket", "err", err)
+				wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 			}
 		}
 	}
@@ -529,13 +534,13 @@ func (wsc *WSConnection) pinger() {
 		timer.Reset(tunTimeout)
 		if sf := wsc.tun.StatusFd; sf != nil {
 			if _, err := sf.Seek(0, 0); err != nil {
-				wsc.Log.Error("Failed to seek file", "err", err)
+				wsc.Log.Error().Err(err).Msg("Failed to seek file")
 				return err
 			}
 			wsc.writeStatus()
 			pos, _ := sf.Seek(0, 1)
 			if err := sf.Truncate(pos); err != nil {
-				wsc.Log.Error("Failed to truncate file", "err", err)
+				wsc.Log.Error().Err(err).Msg("Failed to truncate file")
 				return err
 			}
 		}
@@ -549,18 +554,18 @@ func (wsc *WSConnection) pinger() {
 		}
 		time.Sleep(tunTimeout / 3)
 	}
-	wsc.Log.Info("pinger ending (WS errored or closed)")
+	wsc.Log.Info().Msg("pinger ending (WS errored or closed)")
 	if err := wsc.ws.Close(); err != nil {
-		wsc.Log.Error("Failed to close websocket", "err", err)
+		wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 	}
 }
 
 func (wsc *WSConnection) writeStatus() {
 	if _, err := fmt.Fprintf(wsc.tun.StatusFd, "Unix: %d\n", time.Now().Unix()); err != nil {
-		wsc.Log.Error("Failed to write to status file", "err", err)
+		wsc.Log.Error().Err(err).Msg("Failed to write to status file")
 	}
 	if _, err := fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339)); err != nil {
-		wsc.Log.Error("Failed to write to status file", "err", err)
+		wsc.Log.Error().Err(err).Msg("Failed to write to status file")
 	}
 }
 
@@ -580,7 +585,7 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		if err == nil {
 			return conn, nil
 		}
-		t.Log.Info(fmt.Sprintf("WS: error connecting with local port %d: %s", port, err.Error()))
+		t.Log.Info().Int("port", port).Err(err).Msg("WS: error connecting with local port")
 		continue
 	}
 
@@ -625,7 +630,7 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 		connectReq.Header.Set("Proxy-Authorization", pa)
 	}
 	if err := connectReq.Write(conn); err != nil {
-		t.Log.Error("Failed to write connect request", "err", err)
+		t.Log.Error().Err(err).Msg("Failed to write connect request")
 		return nil, err
 	}
 
@@ -634,7 +639,7 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 	resp, err := http.ReadResponse(br, connectReq)
 	if err != nil {
 		if err := conn.Close(); err != nil {
-			t.Log.Error("Failed to close connection", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to close connection")
 		}
 		return nil, err
 	}
@@ -644,7 +649,7 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 		//return nil, errors.New("proxy refused connection" + string(body))
 		f := strings.SplitN(resp.Status, " ", 2)
 		if err := conn.Close(); err != nil {
-			t.Log.Error("Failed to close connection", "err", err)
+			t.Log.Error().Err(err).Msg("Failed to close connection")
 		}
 		return nil, fmt.Errorf("%s", f[1])
 	}
@@ -740,8 +745,8 @@ var wsWriterMutex sync.Mutex // mutex to allow a single goroutine to send a resp
 // net.http.serve http://golang.org/src/net/http/server.go?#L1124 and
 // net.http.readRequest http://golang.org/src/net/http/server.go?#L
 func (wsc *WSConnection) finishInternalRequest(id int16, req *http.Request) {
-	log := wsc.Log.New("id", id, "verb", req.Method, "uri", req.RequestURI)
-	log.Info("HTTP issuing internal request")
+	log := wsc.Log.With().Int16("id", id).Str("verb", req.Method).Str("uri", req.RequestURI).Logger()
+	log.Info().Msg("HTTP issuing internal request")
 
 	// Remove hop-by-hop headers
 	for _, h := range hopHeaders {
@@ -755,7 +760,7 @@ func (wsc *WSConnection) finishInternalRequest(id int16, req *http.Request) {
 
 	// Dump the request into a buffer in case we want to log it
 	dump, _ := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.ReplaceAll(string(dump), "\r\n", " || "))
+	log.Debug().Str("req", strings.ReplaceAll(string(dump), "\r\n", " || ")).Msg("dump")
 
 	// Make sure we don't die if a panic occurs in the handler
 	defer func() {
@@ -763,7 +768,7 @@ func (wsc *WSConnection) finishInternalRequest(id int16, req *http.Request) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			log.Error("HTTP panic in handler", "err", err, "stack", string(buf))
+			log.Error().Interface("err", err).Str("stack", string(buf)).Msg("HTTP panic in handler")
 		}
 	}()
 
@@ -775,21 +780,18 @@ func (wsc *WSConnection) finishInternalRequest(id int16, req *http.Request) {
 
 	err := rw.finishResponse()
 	if err != nil {
-		//dump2, _ := httputil.DumpResponse(resp, true)
-		//log15.Info("handleWsRequests: request error", "err", err.Error(),
-		//	"req", string(dump), "resp", string(dump2))
-		log.Info("HTTP request error", "err", err.Error())
+		log.Info().Err(err).Msg("HTTP request error")
 		wsc.writeResponseMessage(id, concoctResponse(req, err.Error(), 502))
 		return
 	}
 
-	log.Info("HTTP responded", "status", rw.resp.StatusCode)
+	log.Info().Int("status", rw.resp.StatusCode).Msg("HTTP responded")
 	wsc.writeResponseMessage(id, rw.resp)
 }
 
 func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 
-	log := wsc.Log.New("id", id, "verb", req.Method, "uri", req.RequestURI)
+	log := wsc.Log.With().Int16("id", id).Str("verb", req.Method).Str("uri", req.RequestURI).Logger()
 
 	// Honor X-Host header
 	host := wsc.tun.Server
@@ -797,22 +799,21 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 	if xHost != "" {
 		re := wsc.tun.Regexp
 		if re == nil {
-			log.Info("WS   got x-host header but no regexp provided")
+			log.Info().Msg("WS   got x-host header but no regexp provided")
 			wsc.writeResponseMessage(id, concoctResponse(req,
 				"X-Host header disallowed by wstunnel cli (no -regexp option)", 403))
 			return
 		} else if re.FindString(xHost) == xHost {
 			host = xHost
 		} else {
-			log.Info("WS   x-host disallowed by regexp", "x-host", xHost, "regexp",
-				re.String(), "match", re.FindString(xHost))
+			log.Info().Str("x-host", xHost).Str("regexp", re.String()).Str("match", re.FindString(xHost)).Msg("WS   x-host disallowed by regexp")
 			wsc.writeResponseMessage(id, concoctResponse(req,
 				"X-Host header '"+xHost+"' does not match regexp in wstunnel cli",
 				403))
 			return
 		}
 	} else if host == "" {
-		log.Info("WS   no x-host header and -server not specified")
+		log.Info().Msg("WS   no x-host header and -server not specified")
 		wsc.writeResponseMessage(id, concoctResponse(req,
 			"X-Host header required by wstunnel cli (no -server option)", 403))
 		return
@@ -823,13 +824,13 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 	var err error
 	req.URL, err = url.Parse(fmt.Sprintf("%s%s", host, req.RequestURI))
 	if err != nil {
-		log.Warn("WS   cannot parse requestURI", "err", err.Error())
+		log.Warn().Err(err).Msg("WS   cannot parse requestURI")
 		wsc.writeResponseMessage(id, concoctResponse(req, "Cannot parse request URI", 400))
 		return
 	}
 	req.Host = req.URL.Host // we delete req.Header["Host"] further down
 	req.RequestURI = ""
-	log.Info("HTTP issuing request", "url", req.URL.String())
+	log.Info().Str("url", req.URL.String()).Msg("HTTP issuing request")
 
 	// Remove hop-by-hop headers
 	for _, h := range hopHeaders {
@@ -837,23 +838,20 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 	}
 	// Issue the request to the HTTP server
 	dump, err := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.ReplaceAll(string(dump), "\r\n", " || "))
+	log.Debug().Str("req", strings.ReplaceAll(string(dump), "\r\n", " || ")).Msg("dump")
 	if err != nil {
-		log.Warn("error dumping request", "err", err.Error())
+		log.Warn().Err(err).Msg("error dumping request")
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		//dump2, _ := httputil.DumpResponse(resp, true)
-		//log15.Info("handleWsRequests: request error", "err", err.Error(),
-		//	"req", strings.Replace(string(dump), "\r\n", " || ", -1))
-		log.Info("HTTP request error", "err", err.Error())
+		log.Info().Err(err).Msg("HTTP request error")
 		wsc.writeResponseMessage(id, concoctResponse(req, err.Error(), 502))
 		return
 	}
-	log.Info("HTTP responded", "status", resp.Status)
+	log.Info().Str("status", resp.Status).Msg("HTTP responded")
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Error("Failed to close response body", "err", err)
+			log.Error().Err(err).Msg("Failed to close response body")
 		}
 	}()
 
@@ -867,15 +865,15 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	defer wsWriterMutex.Unlock()
 	// Write response into the tunnel
 	if err := wsc.ws.SetWriteDeadline(time.Time{}); err != nil {
-		wsc.Log.Error("Failed to set write deadline", "err", err)
+		wsc.Log.Error().Err(err).Msg("Failed to set write deadline")
 		return
 	}
 	w, err := wsc.ws.NextWriter(websocket.BinaryMessage)
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {
-		wsc.Log.Warn("WS   NextWriter", "err", err.Error())
+		wsc.Log.Warn().Err(err).Msg("WS   NextWriter")
 		if err := wsc.ws.Close(); err != nil {
-			wsc.Log.Error("Failed to close websocket", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 		return
 	}
@@ -883,9 +881,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	// write the request Id
 	_, err = fmt.Fprintf(w, "%04x", id)
 	if err != nil {
-		wsc.Log.Warn("WS   cannot write request Id", "err", err.Error())
+		wsc.Log.Warn().Err(err).Msg("WS   cannot write request Id")
 		if err := wsc.ws.Close(); err != nil {
-			wsc.Log.Error("Failed to close websocket", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 		return
 	}
@@ -893,9 +891,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	// write the response itself
 	err = resp.Write(w)
 	if err != nil {
-		wsc.Log.Warn("WS   cannot write response", "err", err.Error())
+		wsc.Log.Warn().Err(err).Msg("WS   cannot write response")
 		if err := wsc.ws.Close(); err != nil {
-			wsc.Log.Error("Failed to close websocket", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 		return
 	}
@@ -903,9 +901,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	// done
 	err = w.Close()
 	if err != nil {
-		wsc.Log.Warn("WS   write-close failed", "err", err.Error())
+		wsc.Log.Warn().Err(err).Msg("WS   write-close failed")
 		if err := wsc.ws.Close(); err != nil {
-			wsc.Log.Error("Failed to close websocket", "err", err)
+			wsc.Log.Error().Err(err).Msg("Failed to close websocket")
 		}
 		return
 	}

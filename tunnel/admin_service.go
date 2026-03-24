@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,7 +20,7 @@ import (
 type AdminService struct {
 	db     *sql.DB
 	server *WSTunnelServer
-	log    log15.Logger
+	log    zerolog.Logger
 	mu     sync.RWMutex
 	done   chan struct{}
 	wg     sync.WaitGroup
@@ -117,13 +117,13 @@ func NewAdminService(server *WSTunnelServer, dbPath string) (*AdminService, erro
 	service := &AdminService{
 		db:     db,
 		server: server,
-		log:    server.Log.New("component", "admin"),
+		log:    server.Log.With().Str("component", "admin").Logger(),
 		done:   make(chan struct{}),
 	}
 
 	if err := service.initDB(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
-			service.log.Error("failed to close database after init error", "error", closeErr)
+			service.log.Error().Err(closeErr).Msg("failed to close database after init error")
 		}
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
@@ -285,17 +285,17 @@ func (as *AdminService) GetMonitoringStats(ctx context.Context) (*MonitoringResp
 	var pendingRequests, completedRequests, erroredRequests int64
 
 	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'pending'").Scan(&pendingRequests); err != nil {
-		as.log.Error("Failed to get pending requests count", "err", err)
+		as.log.Error().Err(err).Msg("Failed to get pending requests count")
 		return nil, fmt.Errorf("failed to get pending requests count: %w", err)
 	}
 
 	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'completed'").Scan(&completedRequests); err != nil {
-		as.log.Error("Failed to get completed requests count", "err", err)
+		as.log.Error().Err(err).Msg("Failed to get completed requests count")
 		return nil, fmt.Errorf("failed to get completed requests count: %w", err)
 	}
 
 	if err := as.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_events WHERE status = 'errored'").Scan(&erroredRequests); err != nil {
-		as.log.Error("Failed to get errored requests count", "err", err)
+		as.log.Error().Err(err).Msg("Failed to get errored requests count")
 		return nil, fmt.Errorf("failed to get errored requests count: %w", err)
 	}
 
@@ -350,24 +350,24 @@ func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse,
 
 		// Get last error
 		err := as.db.QueryRowContext(ctx, `
-			SELECT start_time, remote_addr 
-			FROM request_events 
-			WHERE token = ? AND status = 'errored' 
+			SELECT start_time, remote_addr
+			FROM request_events
+			WHERE token = ? AND status = 'errored'
 			ORDER BY start_time DESC LIMIT 1
 		`, string(tokenStr)).Scan(&lastErrorTime, &lastErrorAddr)
 		if err != nil && err != sql.ErrNoRows {
-			as.log.Error("Failed to query last error time", "token", cutToken(tokenStr), "err", err)
+			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last error time")
 		}
 
 		// Get last success
 		err = as.db.QueryRowContext(ctx, `
-			SELECT end_time, remote_addr 
-			FROM request_events 
-			WHERE token = ? AND status = 'completed' 
+			SELECT end_time, remote_addr
+			FROM request_events
+			WHERE token = ? AND status = 'completed'
 			ORDER BY end_time DESC LIMIT 1
 		`, string(tokenStr)).Scan(&lastSuccessTime, &lastSuccessAddr)
 		if err != nil && err != sql.ErrNoRows {
-			as.log.Error("Failed to query last success time", "token", cutToken(tokenStr), "err", err)
+			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last success time")
 		}
 
 		tunnels[string(tokenStr)] = &TunnelDetail{
@@ -402,7 +402,7 @@ func (as *AdminService) cleanupOldRecords() {
 	for {
 		select {
 		case <-as.done:
-			as.log.Debug("Stopping cleanup goroutine")
+			as.log.Debug().Msg("Stopping cleanup goroutine")
 			return
 		case <-ticker.C:
 			// Clean up records older than 7 days
@@ -413,16 +413,16 @@ func (as *AdminService) cleanupOldRecords() {
 
 			as.mu.Lock()
 			if _, err := as.db.ExecContext(ctx, "DELETE FROM request_events WHERE created_at < ?", cutoff); err != nil {
-				as.log.Error("Failed to cleanup old request events", "err", err)
+				as.log.Error().Err(err).Msg("Failed to cleanup old request events")
 			}
 
 			if _, err := as.db.ExecContext(ctx, "DELETE FROM tunnel_events WHERE created_at < ?", cutoff); err != nil {
-				as.log.Error("Failed to cleanup old tunnel events", "err", err)
+				as.log.Error().Err(err).Msg("Failed to cleanup old tunnel events")
 			}
 			as.mu.Unlock()
 
 			cancel() // Clean up the context
-			as.log.Debug("Cleaned up old admin records", "cutoff", cutoff)
+			as.log.Debug().Time("cutoff", cutoff).Msg("Cleaned up old admin records")
 		}
 	}
 }
@@ -438,14 +438,14 @@ func (as *AdminService) HandleAuditing(w http.ResponseWriter, r *http.Request) {
 
 	response, err := as.GetAuditingData(r.Context())
 	if err != nil {
-		as.log.Error("Failed to get auditing data", "err", err)
+		as.log.Error().Err(err).Msg("Failed to get auditing data")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	safeW.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(safeW).Encode(response); err != nil {
-		as.log.Error("Failed to encode auditing response", "err", err)
+		as.log.Error().Err(err).Msg("Failed to encode auditing response")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 	}
 }
@@ -461,14 +461,14 @@ func (as *AdminService) HandleMonitoring(w http.ResponseWriter, r *http.Request)
 
 	response, err := as.GetMonitoringStats(r.Context())
 	if err != nil {
-		as.log.Error("Failed to get monitoring stats", "err", err)
+		as.log.Error().Err(err).Msg("Failed to get monitoring stats")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	safeW.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(safeW).Encode(response); err != nil {
-		as.log.Error("Failed to encode monitoring response", "err", err)
+		as.log.Error().Err(err).Msg("Failed to encode monitoring response")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 	}
 }
@@ -661,7 +661,7 @@ func (as *AdminService) HandleAPIDocs(w http.ResponseWriter, r *http.Request) {
 
 	safeW.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(safeW).Encode(response); err != nil {
-		as.log.Error("Failed to encode API docs response", "err", err)
+		as.log.Error().Err(err).Msg("Failed to encode API docs response")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 	}
 }

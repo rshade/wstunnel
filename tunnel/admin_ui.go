@@ -30,7 +30,7 @@ func (as *AdminService) HandleAdminUI(w http.ResponseWriter, r *http.Request) {
 
 	// Serve the embedded HTML
 	if _, err := safeW.Write([]byte(adminUIHTML)); err != nil {
-		as.log.Error("Failed to write admin UI response", "err", err)
+		as.log.Error().Err(err).Msg("Failed to write admin UI response")
 	}
 }
 
