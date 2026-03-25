@@ -7,57 +7,55 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/rs/zerolog"
 )
 
-var testLog = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+type timeoutTestEnv struct {
+	server   *httptest.Server
+	wstunsrv *WSTunnelServer
+	wstuncli *WSTunnelClient
+	wstunURL string
+	token    string
+}
 
-func TestTokenRequestTimeout(t *testing.T) {
-	// start httptest to simulate target server
-	wstunToken := "test-token-" + strconv.Itoa(rand.Int()%1000000) + "-1234567890"
+func setupTimeoutTest(t *testing.T) *timeoutTestEnv {
+	t.Helper()
 
-	// Create a test server that delays responses
+	token := "test-token-" + strconv.Itoa(rand.Int()%1000000) + "-1234567890"
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/delayed" {
-			// Sleep for 3 seconds, which should trigger the tunnel timeout
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
 			_, _ = w.Write([]byte("This response should never be seen"))
 		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
-	testLog.Info().Str("url", server.URL).Msg("httptest started")
-
-	// start wstunsrv with a very short timeout
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
 	}
 	wstunsrv := NewWSTunnelServer([]string{
-		"-httptimeout", "2", // 2 second timeout for HTTP requests
+		"-httptimeout", "2",
 	})
 	wstunsrv.Start(listener)
-	defer wstunsrv.Stop()
+	t.Cleanup(wstunsrv.Stop)
 
-	// start wstuncli
 	wstuncli := NewWSTunnelClient([]string{
-		"-token", wstunToken,
+		"-token", token,
 		"-tunnel", "ws://" + listener.Addr().String(),
 		"-server", server.URL,
-		"-timeout", "3",
+		"-timeout", "10",
 	})
 	if err := wstuncli.Start(); err != nil {
 		t.Fatalf("Error starting client: %v", err)
 	}
-	defer wstuncli.Stop()
+	t.Cleanup(wstuncli.Stop)
 
 	wstunURL := "http://" + listener.Addr().String()
-	// Wait for client to connect with a deadline
 	start := time.Now()
 	for !wstuncli.IsConnected() {
 		time.Sleep(10 * time.Millisecond)
@@ -66,37 +64,94 @@ func TestTokenRequestTimeout(t *testing.T) {
 		}
 	}
 
-	// Make a request that should time out at the server level
+	return &timeoutTestEnv{
+		server:   server,
+		wstunsrv: wstunsrv,
+		wstuncli: wstuncli,
+		wstunURL: wstunURL,
+		token:    token,
+	}
+}
+
+func TestTokenRequestTimeout(t *testing.T) {
+	env := setupTimeoutTest(t)
+
 	client := &http.Client{
-		Timeout: 5 * time.Second, // Client timeout should occur around server timeout
+		Timeout: 30 * time.Second,
 	}
 
-	start = time.Now()
-	resp, err := client.Get(wstunURL + "/_token/" + wstunToken + "/delayed")
+	start := time.Now()
+	resp, err := client.Get(env.wstunURL + "/_token/" + env.token + "/delayed")
 	elapsed := time.Since(start)
 
-	// Based on CodeRabbit review: server should return 504, not client timeout
 	if err != nil {
-		// If we get an error, check if it's the expected client timeout due to 504 response timing
-		if elapsed >= 4*time.Second && elapsed <= 6*time.Second {
-			// This is acceptable - client timed out around when server timeout occurs
-			return
-		}
-		t.Fatalf("Unexpected error after %v: %v", elapsed, err)
+		t.Fatalf("Expected 504 response, got error after %v: %v", elapsed, err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// If no error, expect 504 status
 	if resp.StatusCode != http.StatusGatewayTimeout {
-		t.Fatalf("Expected 504 Gateway Timeout, got status: %d", resp.StatusCode)
+		t.Fatalf("Expected 504 Gateway Timeout, got status: %d after %v", resp.StatusCode, elapsed)
 	}
 
-	// Verify timing - should timeout around 2 seconds (server HTTPTimeout)
 	if elapsed < 1500*time.Millisecond {
-		t.Fatalf("Timeout occurred too early: %v", elapsed)
+		t.Fatalf("Timeout occurred too early: %v (expected ~2s)", elapsed)
 	}
-	if elapsed > 3000*time.Millisecond {
-		t.Fatalf("Timeout occurred too late: %v", elapsed)
+	if elapsed > 4*time.Second {
+		t.Fatalf("Timeout occurred too late: %v (expected ~2s)", elapsed)
+	}
+}
+
+func TestTokenRequestConcurrentTimeouts(t *testing.T) {
+	env := setupTimeoutTest(t)
+
+	const numRequests = 5
+	var wg sync.WaitGroup
+	type result struct {
+		status  int
+		elapsed time.Duration
+		err     error
+	}
+	results := make([]result, numRequests)
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	wg.Add(numRequests)
+	globalStart := time.Now()
+	for i := range numRequests {
+		go func(idx int) {
+			defer wg.Done()
+			reqStart := time.Now()
+			resp, err := client.Get(env.wstunURL + "/_token/" + env.token + "/delayed")
+			results[idx] = result{elapsed: time.Since(reqStart), err: err}
+			if err == nil {
+				results[idx].status = resp.StatusCode
+				_ = resp.Body.Close()
+			}
+		}(i)
+	}
+	wg.Wait()
+	totalElapsed := time.Since(globalStart)
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Errorf("Request %d: expected 504 response, got error after %v: %v", i, r.elapsed, r.err)
+			continue
+		}
+		if r.status != http.StatusGatewayTimeout {
+			t.Errorf("Request %d: expected 504, got %d after %v", i, r.status, r.elapsed)
+		}
+		if r.elapsed < 1500*time.Millisecond {
+			t.Errorf("Request %d: timeout too early: %v (expected ~2s)", i, r.elapsed)
+		}
+		if r.elapsed > 5*time.Second {
+			t.Errorf("Request %d: timeout too late: %v (expected ~2s)", i, r.elapsed)
+		}
+	}
+
+	if totalElapsed > 6*time.Second {
+		t.Errorf("All requests took too long: %v (expected ~2-4s)", totalElapsed)
 	}
 }
