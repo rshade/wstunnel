@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -32,10 +33,12 @@ func httpError(log zerolog.Logger, w http.ResponseWriter, identifier, err string
 type safeResponseWriter struct {
 	http.ResponseWriter
 	wroteHeader bool
+	statusCode  int
 }
 
 func (w *safeResponseWriter) WriteHeader(statusCode int) {
 	if !w.wroteHeader {
+		w.statusCode = statusCode
 		w.ResponseWriter.WriteHeader(statusCode)
 		w.wroteHeader = true
 	}
@@ -198,6 +201,11 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	clientVersion := r.Header.Get("X-Client-Version")
 	rs.setClientVersion(clientVersion)
 	t.Log.Info().Str("token", logTok).Str("addr", addr).Str("ws", wsp(ws)).Str("client_version", clientVersion).Msg("WS new tunnel connection")
+	if as := t.getAdminService(); as != nil {
+		if err := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventConnected, addr, "", "", clientVersion, ""); err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to record tunnel connect event")
+		}
+	}
 	// do reverse DNS lookup asynchronously
 	go func() {
 		name, whois := ipAddrLookup(t.Log, rs.remoteAddr)
@@ -373,6 +381,12 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 	}
 	// close up shop
 	ch <- 0 // notify sender
+
+	if as := t.getAdminService(); as != nil {
+		if err := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventDisconnected, rs.remoteAddr, "", "", "", ""); err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to record tunnel disconnect event")
+		}
+	}
 
 	// Cleanup: decrement client count for this token
 	if t.MaxClientsPerToken > 0 {

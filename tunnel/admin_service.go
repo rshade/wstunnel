@@ -80,11 +80,18 @@ type RequestEvent struct {
 	Error      string     `json:"error,omitempty"`
 }
 
+const (
+	TunnelEventConnected    = "connected"
+	TunnelEventDisconnected = "disconnected"
+	TunnelEventReaped       = "reaped"
+	TunnelEventError        = "error"
+)
+
 // TunnelEvent represents a tunnel lifecycle event
 type TunnelEvent struct {
 	ID            int64     `json:"id"`
 	Token         string    `json:"token"`
-	Event         string    `json:"event"` // connected, disconnected, error
+	Event         string    `json:"event"` // connected, disconnected, reaped, error
 	RemoteAddr    string    `json:"remote_addr"`
 	RemoteName    string    `json:"remote_name"`
 	RemoteWhois   string    `json:"remote_whois"`
@@ -197,6 +204,11 @@ func (as *AdminService) RecordRequestStart(ctx context.Context, token, method, u
 		return 0, fmt.Errorf("input exceeds maximum length")
 	}
 
+	// Truncate token to avoid persisting full credentials to disk
+	if len(token) > 8 {
+		token = token[:8] + "..."
+	}
+
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
@@ -250,6 +262,11 @@ func (as *AdminService) RecordTunnelEvent(ctx context.Context, token, event, rem
 	}
 	if len(token) > 255 || len(event) > 50 || len(details) > 1000 {
 		return fmt.Errorf("input exceeds maximum length")
+	}
+
+	// Truncate token to avoid persisting full credentials to disk
+	if len(token) > 8 {
+		token = token[:8] + "..."
 	}
 
 	as.mu.Lock()
@@ -354,7 +371,7 @@ func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse,
 			FROM request_events
 			WHERE token = ? AND status = 'errored'
 			ORDER BY start_time DESC LIMIT 1
-		`, string(tokenStr)).Scan(&lastErrorTime, &lastErrorAddr)
+		`, cutToken(tokenStr)).Scan(&lastErrorTime, &lastErrorAddr)
 		if err != nil && err != sql.ErrNoRows {
 			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last error time")
 		}
@@ -365,7 +382,7 @@ func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse,
 			FROM request_events
 			WHERE token = ? AND status = 'completed'
 			ORDER BY end_time DESC LIMIT 1
-		`, string(tokenStr)).Scan(&lastSuccessTime, &lastSuccessAddr)
+		`, cutToken(tokenStr)).Scan(&lastSuccessTime, &lastSuccessAddr)
 		if err != nil && err != sql.ErrNoRows {
 			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last success time")
 		}
