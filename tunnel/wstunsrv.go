@@ -26,10 +26,6 @@ import (
 	"github.com/rshade/wstunnel/whois"
 )
 
-// The ReadTimeout and WriteTimeout don't actually work in Go
-// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
-//const cliTout = 300 // http read/write/idle timeout
-
 // ErrRetry Error when sending request
 var ErrRetry = errors.New("error sending request, please retry")
 
@@ -37,7 +33,6 @@ var ErrRetry = errors.New("error sending request, please retry")
 var pkgLog = zerolog.New(os.Stderr).With().Timestamp().Str("pkg", "tunnel").Logger()
 
 const tunnelInactiveKillTimeout = 60 * time.Minute // close dead tunnels
-// const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead tunnels
 
 //===== Data Structures =====
 
@@ -46,6 +41,8 @@ const (
 	defaultMaxReq = 20
 	//minTokenLen min number of chars in a token
 	minTokenLen = 16
+	// httpStatusParseError is returned when the tunneled response cannot be parsed
+	httpStatusParseError = 506
 )
 
 type token string
@@ -57,13 +54,13 @@ type responseBuffer struct {
 
 // A request for a remote server
 type remoteRequest struct {
-	id         int16               // unique (scope=server) request id
-	info       string              // http method + uri for debug/logging
-	remoteAddr string              // remote address for debug/logging
-	buffer     *bytes.Buffer       // request buffer to send
-	replyChan  chan responseBuffer // response that got returned, capacity=1!
-	deadline   time.Time           // timeout
-	startTime  time.Time           // when the request started
+	id         int16         // unique (scope=server) request id
+	info       string        // http method + uri for debug/logging
+	remoteAddr string        // remote address for debug/logging
+	buffer     *bytes.Buffer // request buffer to send
+	replyChan  chan responseBuffer
+	deadline   time.Time // timeout
+	startTime  time.Time // when the request started
 	log        zerolog.Logger
 }
 
@@ -598,8 +595,6 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 	// create the request object
 	req := makeRequest(r, t.HTTPTimeout)
 	req.log = t.Log.With().Str("token", cutToken(tok)).Logger()
-	//req.token = tok
-	//log_token := cutToken(tok)
 
 	req.remoteAddr = r.Header.Get("X-Forwarded-For")
 	if req.remoteAddr == "" {
@@ -635,13 +630,18 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// Ensure we retire the request when we pop out of this function
-	// and signal the tunnel reader to continue
+	// and signal the tunnel reader to continue.
+	// The signal is sent in a goroutine because wsReader holds readCond.L
+	// while reading from the WebSocket. Blocking here would prevent the
+	// HTTP response from being flushed to the client.
 	defer func() {
 		rs.RetireRequest(req)
 		if !retry {
-			rs.readCond.L.Lock() // make sure the reader is in Wait()
-			rs.readCond.Signal()
-			rs.readCond.L.Unlock()
+			go func() {
+				rs.readCond.L.Lock()
+				rs.readCond.Signal()
+				rs.readCond.L.Unlock()
+			}()
 		}
 	}()
 
@@ -668,8 +668,12 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// wait for response
+	timer := time.NewTimer(timeoutRemaining)
+	defer timer.Stop()
+
 	select {
 	case resp := <-req.replyChan:
+		timer.Stop()
 		// if there's no error just respond
 		if resp.err == nil {
 			code := writeResponse(w, resp.response)
@@ -685,10 +689,13 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			req.log.Info().Str("verb", r.Method).Str("url", r.URL.String()).Msg("WS   retrying")
 			retry = true
 		}
-	case <-time.After(timeoutRemaining):
+	case <-timer.C:
 		// it timed out...
 		req.log.Info().Str("status", "504").Str("err", "Tunnel timeout").Msg("HTTP RET")
 		safeError(w, "Tunnel timeout", http.StatusGatewayTimeout)
+	case <-r.Context().Done():
+		// client disconnected before we got a response
+		req.log.Info().Str("status", "499").Str("err", "Client disconnected").Msg("HTTP RET")
 	}
 	return
 }
@@ -841,7 +848,6 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 }
 
 func (rs *remoteServer) AbortRequests() {
-	//logToken := cutToken(rs.tok)
 	// end any requests that are queued
 l:
 	for {
@@ -923,8 +929,8 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 		// Set headers before calling WriteHeader to avoid superfluous warning
 		safeW.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		safeW.Header().Set("X-Content-Type-Options", "nosniff")
-		safeW.WriteHeader(506)
-		return 506
+		safeW.WriteHeader(httpStatusParseError)
+		return httpStatusParseError
 	}
 	for _, h := range censoredHeaders {
 		resp.Header.Del(h)
@@ -957,5 +963,4 @@ func (t *WSTunnelServer) idleTunnelReaper() {
 		t.serverRegistryMutex.Unlock()
 		time.Sleep(time.Minute)
 	}
-	//t.Log.Debug("idleTunnelReaper ended")
 }

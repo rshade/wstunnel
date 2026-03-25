@@ -342,8 +342,8 @@ func (t *WSTunnelClient) Start() error {
 		for {
 			d := &websocket.Dialer{
 				NetDial:         t.wsProxyDialer,
-				ReadBufferSize:  100 * 1024,
-				WriteBufferSize: 100 * 1024,
+				ReadBufferSize:  wsBufferSize,
+				WriteBufferSize: wsBufferSize,
 				TLSClientConfig: &tlsClientConfig,
 			}
 			h := make(http.Header)

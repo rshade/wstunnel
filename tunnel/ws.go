@@ -62,12 +62,8 @@ func safeError(w http.ResponseWriter, error string, code int) {
 	_, _ = safeW.Write([]byte(error))
 }
 
-// websocket error constants
-// const (
-// 	wsReadClose  = iota
-// 	wsReadError  = iota
-// 	wsWriteError = iota
-// )
+const wsBufferSize = 100 * 1024
+const minWriteDeadline = 5 * time.Second
 
 func wsp(ws *websocket.Conn) string { return fmt.Sprintf("%p", ws) }
 
@@ -174,8 +170,8 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 
 	// Upgrade to web sockets
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  100 * 1024,
-		WriteBufferSize: 100 * 1024,
+		ReadBufferSize:  wsBufferSize,
+		WriteBufferSize: wsBufferSize,
 		CheckOrigin: func(r *http.Request) bool {
 			return true // Allow all origins for tunnel connections
 		},
@@ -262,7 +258,6 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			}
 			return
 		}
-		//log.Printf("WS->%s#%d start %s", req.token, req.id, req.info)
 		// See whether the request has already expired
 		if req.deadline.Before(time.Now()) {
 			req.replyChan <- responseBuffer{
@@ -271,8 +266,13 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			req.log.Info().Float64("ago", time.Since(req.deadline).Seconds()).Msg("WS   SND timeout before sending")
 			continue
 		}
-		// write the request into the tunnel
-		if err = ws.SetWriteDeadline(time.Time{}); err != nil {
+		// Use at least minWriteDeadline to avoid killing the shared WebSocket
+		// when a near-expired request's tight deadline triggers a write timeout
+		writeDeadline := req.deadline
+		if remaining := time.Until(writeDeadline); remaining < minWriteDeadline {
+			writeDeadline = time.Now().Add(minWriteDeadline)
+		}
+		if err = ws.SetWriteDeadline(writeDeadline); err != nil {
 			rs.log.Error().Err(err).Msg("Failed to set write deadline")
 			break // Break out of write loop on error
 		}
