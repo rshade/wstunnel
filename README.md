@@ -198,10 +198,10 @@ $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -t
 > parameter. The `-server` parameter is for the local HTTP server behind
 > the firewall (e.g., `http://localhost`).
 >
-> **Hint:** If your endpoint server is receiving unexpected `GET /_tunnel`
-> requests and the WStunnel CLI reports "Error opening connection", you
-> likely have the `-tunnel` and `-server` parameters swapped.
-
+> **Hint:** If your local HTTP server behind the firewall is receiving
+> unexpected `GET /_tunnel` requests and the WStunnel CLI reports
+> "Error opening connection", you likely have the `-tunnel` and `-server`
+> parameters swapped.
 If the server is running with a base path (e.g., `-base-path /wstunnel`), include it in the tunnel URL:
 
 ```bash
