@@ -4,10 +4,10 @@ go 1.25.8
 
 require (
 	github.com/gorilla/websocket v1.5.3
-	modernc.org/sqlite v1.47.0
+	modernc.org/sqlite v1.48.0
 )
 
-require github.com/rs/zerolog v1.34.0
+require github.com/rs/zerolog v1.35.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -18,7 +18,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	modernc.org/libc v1.70.0 // indirect
-	modernc.org/libc/v2 v2.1.30 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
