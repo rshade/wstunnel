@@ -216,7 +216,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(t, rs, ws, ch, tokenStr)
+	go wsReader(t, rs, ws, ch, tokenStr, addr)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
@@ -321,7 +321,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan int, tokenStr token) {
+func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan int, tokenStr token, remoteAddr string) {
 	var err error
 	logToken := cutToken(rs.token)
 
@@ -383,8 +383,12 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 	ch <- 0 // notify sender
 
 	if as := t.getAdminService(); as != nil {
-		if err := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventDisconnected, rs.remoteAddr, "", "", "", ""); err != nil {
-			t.Log.Warn().Err(err).Msg("Failed to record tunnel disconnect event")
+		details := ""
+		if err != nil {
+			details = err.Error()
+		}
+		if recErr := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventDisconnected, remoteAddr, "", "", "", details); recErr != nil {
+			t.Log.Warn().Err(recErr).Msg("Failed to record tunnel disconnect event")
 		}
 	}
 

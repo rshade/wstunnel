@@ -963,7 +963,8 @@ func TestGetAdminServiceAccessor(t *testing.T) {
 	}
 
 	var requestCount, tunnelEventCount int
-	err = as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE token = 'test-tok...'").Scan(&requestCount)
+	tokenHash := hashToken("test-token-accessor")
+	err = as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE token = ?", tokenHash).Scan(&requestCount)
 	if err != nil {
 		t.Fatalf("Failed to query request events: %v", err)
 	}
@@ -971,7 +972,7 @@ func TestGetAdminServiceAccessor(t *testing.T) {
 		t.Errorf("Expected 1 request event, got %d", requestCount)
 	}
 
-	err = as.db.QueryRow("SELECT COUNT(*) FROM tunnel_events WHERE token = 'test-tok...'").Scan(&tunnelEventCount)
+	err = as.db.QueryRow("SELECT COUNT(*) FROM tunnel_events WHERE token = ?", tokenHash).Scan(&tunnelEventCount)
 	if err != nil {
 		t.Fatalf("Failed to query tunnel events: %v", err)
 	}
