@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -90,10 +91,13 @@ type RequestEvent struct {
 }
 
 const (
-	TunnelEventConnected    = "connected"
-	TunnelEventDisconnected = "disconnected"
-	TunnelEventReaped       = "reaped"
-	TunnelEventError        = "error"
+	TunnelEventConnected         = "connected"
+	TunnelEventDisconnected      = "disconnected"
+	TunnelEventReaped            = "reaped"
+	TunnelEventError             = "error"
+	TunnelEventForceDisconnected = "force_disconnected"
+	TunnelEventBlocked           = "blocked"
+	TunnelEventUnblocked         = "unblocked"
 )
 
 // TunnelEvent represents a tunnel lifecycle event
@@ -122,6 +126,38 @@ type APIEndpoint struct {
 	Description string                 `json:"description"`
 	Response    map[string]interface{} `json:"response"`
 }
+
+// DisconnectResponse represents the JSON response for force-disconnect
+type DisconnectResponse struct {
+	Token        string `json:"token"`
+	Disconnected int    `json:"disconnected"`
+	Message      string `json:"message"`
+}
+
+// BlockResponse represents the JSON response for token blocking/unblocking
+type BlockResponse struct {
+	Token        string `json:"token"`
+	Blocked      bool   `json:"blocked"`
+	Disconnected int    `json:"disconnected,omitempty"`
+	Message      string `json:"message"`
+}
+
+// BlockedTokensResponse represents the JSON response for listing blocked tokens
+type BlockedTokensResponse struct {
+	Timestamp     time.Time          `json:"timestamp"`
+	BlockedTokens []BlockedTokenInfo `json:"blocked_tokens"`
+	Count         int                `json:"count"`
+}
+
+// BlockedTokenInfo represents a single blocked token entry
+type BlockedTokenInfo struct {
+	Token     string    `json:"token"`
+	BlockedAt time.Time `json:"blocked_at"`
+}
+
+// Regex patterns for admin control path parsing
+var matchTunnelDisconnect = regexp.MustCompile(`^/admin/tunnels/([^/]+)/disconnect$`)
+var matchTokenBlock = regexp.MustCompile(`^/admin/tokens/([^/]+)/block$`)
 
 // NewAdminService creates a new admin service with SQLite tracking
 func NewAdminService(server *WSTunnelServer, dbPath string) (*AdminService, error) {
@@ -669,6 +705,68 @@ func (as *AdminService) GetAPIDocumentation() *APIDocsResponse {
 					},
 				},
 			},
+			{
+				Path:        "/admin/tunnels/{token}/disconnect",
+				Method:      "POST",
+				Description: "Force-disconnect all WebSocket connections for a given token",
+				Response: map[string]interface{}{
+					"token": map[string]string{
+						"type":        "string",
+						"description": "Truncated token identifier",
+					},
+					"disconnected": map[string]string{
+						"type":        "integer",
+						"description": "Number of connections that were disconnected",
+					},
+					"message": map[string]string{
+						"type":        "string",
+						"description": "Human-readable result message",
+					},
+				},
+			},
+			{
+				Path:        "/admin/tokens/{token}/block",
+				Method:      "POST/DELETE",
+				Description: "Block (POST) or unblock (DELETE) a token. Blocked tokens cannot establish new connections. Use ?disconnect=true on POST to also force-disconnect existing connections.",
+				Response: map[string]interface{}{
+					"token": map[string]string{
+						"type":        "string",
+						"description": "Truncated token identifier",
+					},
+					"blocked": map[string]string{
+						"type":        "boolean",
+						"description": "Whether the token is now blocked",
+					},
+					"disconnected": map[string]string{
+						"type":        "integer",
+						"description": "Number of connections disconnected (only when ?disconnect=true)",
+					},
+					"message": map[string]string{
+						"type":        "string",
+						"description": "Human-readable result message",
+					},
+				},
+			},
+			{
+				Path:        "/admin/tokens/blocked",
+				Method:      "GET",
+				Description: "List all currently blocked tokens",
+				Response: map[string]interface{}{
+					"timestamp": map[string]string{
+						"type":        "string",
+						"format":      "datetime",
+						"description": "Time when the list was generated",
+					},
+					"blocked_tokens": map[string]string{
+						"type":        "array",
+						"description": "List of blocked tokens with their block timestamps",
+					},
+					"count": map[string]string{
+						"type":        "integer",
+						"description": "Total number of blocked tokens",
+					},
+				},
+			},
 		},
 	}
 }
@@ -689,4 +787,146 @@ func (as *AdminService) HandleAPIDocs(w http.ResponseWriter, r *http.Request) {
 		as.log.Error().Err(err).Msg("Failed to encode API docs response")
 		safeError(safeW, "Internal server error", http.StatusInternalServerError)
 	}
+}
+
+// stripBasePath removes the server base path prefix from a request path
+func (as *AdminService) stripBasePath(path string) string {
+	if as.server.BasePath != "" {
+		path = strings.TrimPrefix(path, as.server.BasePath)
+	}
+	return path
+}
+
+// HandleTunnelDisconnect handles POST /admin/tunnels/{token}/disconnect
+func (as *AdminService) HandleTunnelDisconnect(w http.ResponseWriter, r *http.Request) {
+	safeW := &safeResponseWriter{ResponseWriter: w}
+
+	if r.Method != "POST" {
+		safeError(safeW, "Only POST requests are supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := as.stripBasePath(r.URL.Path)
+	matches := matchTunnelDisconnect.FindStringSubmatch(path)
+	if len(matches) != 2 {
+		safeError(safeW, "Invalid path format, expected /admin/tunnels/{token}/disconnect", http.StatusBadRequest)
+		return
+	}
+
+	tok := token(matches[1])
+
+	rs := as.server.getRemoteServer(tok, false)
+	if rs == nil {
+		safeW.Header().Set("Content-Type", "application/json")
+		safeW.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(safeW).Encode(DisconnectResponse{
+			Token:        string(tok),
+			Disconnected: 0,
+			Message:      "tunnel not found",
+		})
+		return
+	}
+
+	count := rs.CloseAllConnections()
+
+	if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventForceDisconnected,
+		"", "", "", "", fmt.Sprintf("admin force-disconnected %d connection(s)", count)); err != nil {
+		as.log.Warn().Err(err).Msg("Failed to record force-disconnect event")
+	}
+
+	safeW.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(safeW).Encode(DisconnectResponse{
+		Token:        cutToken(tok),
+		Disconnected: count,
+		Message:      fmt.Sprintf("disconnected %d connection(s)", count),
+	})
+}
+
+// HandleTokenBlock handles POST/DELETE /admin/tokens/{token}/block
+func (as *AdminService) HandleTokenBlock(w http.ResponseWriter, r *http.Request) {
+	safeW := &safeResponseWriter{ResponseWriter: w}
+
+	path := as.stripBasePath(r.URL.Path)
+	matches := matchTokenBlock.FindStringSubmatch(path)
+	if len(matches) != 2 {
+		safeError(safeW, "Invalid path format, expected /admin/tokens/{token}/block", http.StatusBadRequest)
+		return
+	}
+
+	tok := token(matches[1])
+
+	switch r.Method {
+	case "POST":
+		as.server.BlockToken(tok)
+
+		var disconnected int
+		if r.URL.Query().Get("disconnect") == "true" {
+			disconnected = as.server.DisconnectToken(tok)
+		}
+
+		if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventBlocked,
+			"", "", "", "", "token blocked by admin"); err != nil {
+			as.log.Warn().Err(err).Msg("Failed to record block event")
+		}
+
+		msg := "token blocked"
+		if disconnected > 0 {
+			msg = fmt.Sprintf("token blocked, disconnected %d connection(s)", disconnected)
+		}
+
+		safeW.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(safeW).Encode(BlockResponse{
+			Token:        cutToken(tok),
+			Blocked:      true,
+			Disconnected: disconnected,
+			Message:      msg,
+		})
+
+	case "DELETE":
+		existed := as.server.UnblockToken(tok)
+
+		if existed {
+			if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventUnblocked,
+				"", "", "", "", "token unblocked by admin"); err != nil {
+				as.log.Warn().Err(err).Msg("Failed to record unblock event")
+			}
+		}
+
+		safeW.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(safeW).Encode(BlockResponse{
+			Token:   cutToken(tok),
+			Blocked: false,
+			Message: "token unblocked",
+		})
+
+	default:
+		safeError(safeW, "Only POST and DELETE requests are supported", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleBlockedTokens handles GET /admin/tokens/blocked
+func (as *AdminService) HandleBlockedTokens(w http.ResponseWriter, r *http.Request) {
+	safeW := &safeResponseWriter{ResponseWriter: w}
+
+	if r.Method != "GET" {
+		safeError(safeW, "Only GET requests are supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	blocked := as.server.GetBlockedTokens()
+
+	tokens := make([]BlockedTokenInfo, 0, len(blocked))
+	for tok, blockedAt := range blocked {
+		tokens = append(tokens, BlockedTokenInfo{
+			Token:     cutToken(tok),
+			BlockedAt: blockedAt,
+		})
+	}
+
+	safeW.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(safeW).Encode(BlockedTokensResponse{
+		Timestamp:     time.Now(),
+		BlockedTokens: tokens,
+		Count:         len(tokens),
+	})
 }
