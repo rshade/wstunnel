@@ -903,3 +903,80 @@ func TestRecordRequestCompleteInvalidID(t *testing.T) {
 		t.Errorf("Expected 'not found' error, got: %v", err)
 	}
 }
+
+func TestGetAdminServiceAccessor(t *testing.T) {
+	server := &WSTunnelServer{
+		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
+		serverRegistry: make(map[token]*remoteServer),
+		tokenClients:   make(map[token]int),
+	}
+
+	if as := server.getAdminService(); as != nil {
+		t.Error("Expected nil admin service before initialization")
+	}
+
+	tmpfile, err := os.CreateTemp("", "admin_accessor_test*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	adminService, err := NewAdminService(server, tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to create admin service: %v", err)
+	}
+	defer func() { _ = adminService.Close() }()
+
+	server.adminServiceMutex.Lock()
+	server.adminService = adminService
+	server.adminServiceMutex.Unlock()
+
+	as := server.getAdminService()
+	if as == nil {
+		t.Fatal("Expected non-nil admin service after initialization")
+	}
+
+	requestID, err := as.RecordRequestStart(context.Background(), "test-token-accessor", "GET", "/test", "10.0.0.1")
+	if err != nil {
+		t.Fatalf("Failed to record request start: %v", err)
+	}
+	if requestID <= 0 {
+		t.Errorf("Expected positive request ID, got %d", requestID)
+	}
+
+	err = as.RecordRequestComplete(context.Background(), requestID, true, "")
+	if err != nil {
+		t.Fatalf("Failed to record request complete: %v", err)
+	}
+
+	err = as.RecordTunnelEvent(context.Background(), "test-token-accessor", TunnelEventConnected, "10.0.0.1", "", "", "v1.0", "")
+	if err != nil {
+		t.Fatalf("Failed to record tunnel connect: %v", err)
+	}
+
+	err = as.RecordTunnelEvent(context.Background(), "test-token-accessor", TunnelEventDisconnected, "10.0.0.1", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Failed to record tunnel disconnect: %v", err)
+	}
+
+	var requestCount, tunnelEventCount int
+	tokenHash := hashToken("test-token-accessor")
+	err = as.db.QueryRow("SELECT COUNT(*) FROM request_events WHERE token = ?", tokenHash).Scan(&requestCount)
+	if err != nil {
+		t.Fatalf("Failed to query request events: %v", err)
+	}
+	if requestCount != 1 {
+		t.Errorf("Expected 1 request event, got %d", requestCount)
+	}
+
+	err = as.db.QueryRow("SELECT COUNT(*) FROM tunnel_events WHERE token = ?", tokenHash).Scan(&tunnelEventCount)
+	if err != nil {
+		t.Fatalf("Failed to query tunnel events: %v", err)
+	}
+	if tunnelEventCount != 2 {
+		t.Errorf("Expected 2 tunnel events (connect+disconnect), got %d", tunnelEventCount)
+	}
+}

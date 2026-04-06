@@ -4,7 +4,9 @@ package tunnel
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +17,13 @@ import (
 	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
 )
+
+// hashToken produces a deterministic, collision-resistant key from a full token
+// for use as a database lookup key. The full token is never persisted to disk.
+func hashToken(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
 
 // AdminService provides administrative endpoints for monitoring and auditing
 type AdminService struct {
@@ -80,11 +89,18 @@ type RequestEvent struct {
 	Error      string     `json:"error,omitempty"`
 }
 
+const (
+	TunnelEventConnected    = "connected"
+	TunnelEventDisconnected = "disconnected"
+	TunnelEventReaped       = "reaped"
+	TunnelEventError        = "error"
+)
+
 // TunnelEvent represents a tunnel lifecycle event
 type TunnelEvent struct {
 	ID            int64     `json:"id"`
 	Token         string    `json:"token"`
-	Event         string    `json:"event"` // connected, disconnected, error
+	Event         string    `json:"event"` // connected, disconnected, reaped, error
 	RemoteAddr    string    `json:"remote_addr"`
 	RemoteName    string    `json:"remote_name"`
 	RemoteWhois   string    `json:"remote_whois"`
@@ -197,13 +213,17 @@ func (as *AdminService) RecordRequestStart(ctx context.Context, token, method, u
 		return 0, fmt.Errorf("input exceeds maximum length")
 	}
 
+	// Hash token to avoid persisting full credentials to disk while preventing
+	// collisions that would occur with simple prefix truncation.
+	hashedToken := hashToken(token)
+
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
 	result, err := as.db.ExecContext(ctx, `
 		INSERT INTO request_events (token, method, uri, remote_addr, status, start_time)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, token, method, uri, remoteAddr, "pending", time.Now())
+	`, hashedToken, method, uri, remoteAddr, "pending", time.Now())
 
 	if err != nil {
 		return 0, err
@@ -252,13 +272,17 @@ func (as *AdminService) RecordTunnelEvent(ctx context.Context, token, event, rem
 		return fmt.Errorf("input exceeds maximum length")
 	}
 
+	// Hash token to avoid persisting full credentials to disk while preventing
+	// collisions that would occur with simple prefix truncation.
+	hashedToken := hashToken(token)
+
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
 	_, err := as.db.ExecContext(ctx, `
 		INSERT INTO tunnel_events (token, event, remote_addr, remote_name, remote_whois, client_version, timestamp, details)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, token, event, remoteAddr, remoteName, remoteWhois, clientVersion, time.Now(), details)
+	`, hashedToken, event, remoteAddr, remoteName, remoteWhois, clientVersion, time.Now(), details)
 
 	return err
 }
@@ -349,12 +373,13 @@ func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse,
 		var lastErrorAddr, lastSuccessAddr string
 
 		// Get last error
+		tokenHash := hashToken(string(tokenStr))
 		err := as.db.QueryRowContext(ctx, `
 			SELECT start_time, remote_addr
 			FROM request_events
 			WHERE token = ? AND status = 'errored'
 			ORDER BY start_time DESC LIMIT 1
-		`, string(tokenStr)).Scan(&lastErrorTime, &lastErrorAddr)
+		`, tokenHash).Scan(&lastErrorTime, &lastErrorAddr)
 		if err != nil && err != sql.ErrNoRows {
 			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last error time")
 		}
@@ -365,7 +390,7 @@ func (as *AdminService) GetAuditingData(ctx context.Context) (*AuditingResponse,
 			FROM request_events
 			WHERE token = ? AND status = 'completed'
 			ORDER BY end_time DESC LIMIT 1
-		`, string(tokenStr)).Scan(&lastSuccessTime, &lastSuccessAddr)
+		`, tokenHash).Scan(&lastSuccessTime, &lastSuccessAddr)
 		if err != nil && err != sql.ErrNoRows {
 			as.log.Error().Str("token", cutToken(tokenStr)).Err(err).Msg("Failed to query last success time")
 		}

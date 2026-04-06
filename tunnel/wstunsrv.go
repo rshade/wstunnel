@@ -5,6 +5,7 @@ package tunnel
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -130,6 +131,12 @@ type WSTunnelServer struct {
 	tokenClientsMutex    sync.RWMutex            // mutex to protect client count map
 	adminService         *AdminService           // admin service for monitoring and auditing
 	adminServiceMutex    sync.RWMutex            // mutex to protect admin service access
+}
+
+func (t *WSTunnelServer) getAdminService() *AdminService {
+	t.adminServiceMutex.RLock()
+	defer t.adminServiceMutex.RUnlock()
+	return t.adminService
 }
 
 // name Lookups
@@ -589,8 +596,10 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
-	// Wrap the response writer with our safe wrapper
-	safeW := &safeResponseWriter{ResponseWriter: w}
+	safeW, ok := w.(*safeResponseWriter)
+	if !ok {
+		safeW = &safeResponseWriter{ResponseWriter: w}
+	}
 
 	// create the request object
 	req := makeRequest(r, t.HTTPTimeout)
@@ -601,11 +610,42 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 		req.remoteAddr = r.RemoteAddr
 	}
 
+	as := t.getAdminService()
+
+	var requestID int64
+	if as != nil {
+		id, err := as.RecordRequestStart(r.Context(), string(tok), r.Method, r.URL.String(), req.remoteAddr)
+		if err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to record request start")
+		} else {
+			requestID = id
+		}
+	}
+
 	// repeatedly try to get a response
 	for tries := 1; tries <= 3; tries++ {
 		retry := getResponse(t, req, safeW, r, tok, tries)
 		if !retry {
-			return
+			break
+		}
+		if tries == 3 {
+			safeError(safeW, "Tunnel retry exhausted", http.StatusGatewayTimeout)
+		}
+	}
+
+	if requestID > 0 && as != nil {
+		var success bool
+		var errMsg string
+		switch {
+		case safeW.statusCode >= 200 && safeW.statusCode < 400:
+			success = true
+		case safeW.statusCode > 0:
+			errMsg = fmt.Sprintf("HTTP %d", safeW.statusCode)
+		default:
+			errMsg = "no response written"
+		}
+		if err := as.RecordRequestComplete(context.Background(), requestID, success, errMsg); err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to record request complete")
 		}
 	}
 }
@@ -949,18 +989,42 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 
 // idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
 func (t *WSTunnelServer) idleTunnelReaper() {
+	type reapedTunnel struct {
+		token      string
+		remoteAddr string
+		inactiveBy time.Duration
+	}
+
 	t.Log.Debug().Msg("idleTunnelReaper started")
 	for {
+		var reaped []reapedTunnel
+
 		t.serverRegistryMutex.Lock()
 		for _, rs := range t.serverRegistry {
 			if time.Since(rs.lastActivity) > tunnelInactiveKillTimeout {
 				rs.log.Warn().Dur("ago", time.Since(rs.lastActivity)).Msg("Tunnel not seen for a long time, deleting")
+				reaped = append(reaped, reapedTunnel{
+					token:      string(rs.token),
+					remoteAddr: rs.remoteAddr,
+					inactiveBy: time.Since(rs.lastActivity),
+				})
 				// unlink so new tunnels/tokens use a new RemoteServer object
 				delete(t.serverRegistry, rs.token)
 				go rs.AbortRequests()
 			}
 		}
 		t.serverRegistryMutex.Unlock()
+
+		// Record reap events outside the registry lock to avoid deadlock
+		// with GetMonitoringStats/GetAuditingData which acquire locks in reverse order
+		if as := t.getAdminService(); as != nil {
+			for _, r := range reaped {
+				if err := as.RecordTunnelEvent(context.Background(), r.token, TunnelEventReaped, r.remoteAddr, "", "", "", fmt.Sprintf("inactive for %s", r.inactiveBy)); err != nil {
+					t.Log.Warn().Err(err).Msg("Failed to record tunnel reap event")
+				}
+			}
+		}
+
 		time.Sleep(time.Minute)
 	}
 }

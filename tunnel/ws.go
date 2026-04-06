@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -32,10 +33,12 @@ func httpError(log zerolog.Logger, w http.ResponseWriter, identifier, err string
 type safeResponseWriter struct {
 	http.ResponseWriter
 	wroteHeader bool
+	statusCode  int
 }
 
 func (w *safeResponseWriter) WriteHeader(statusCode int) {
 	if !w.wroteHeader {
+		w.statusCode = statusCode
 		w.ResponseWriter.WriteHeader(statusCode)
 		w.wroteHeader = true
 	}
@@ -198,6 +201,11 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	clientVersion := r.Header.Get("X-Client-Version")
 	rs.setClientVersion(clientVersion)
 	t.Log.Info().Str("token", logTok).Str("addr", addr).Str("ws", wsp(ws)).Str("client_version", clientVersion).Msg("WS new tunnel connection")
+	if as := t.getAdminService(); as != nil {
+		if err := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventConnected, addr, "", "", clientVersion, ""); err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to record tunnel connect event")
+		}
+	}
 	// do reverse DNS lookup asynchronously
 	go func() {
 		name, whois := ipAddrLookup(t.Log, rs.remoteAddr)
@@ -208,7 +216,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(t, rs, ws, ch, tokenStr)
+	go wsReader(t, rs, ws, ch, tokenStr, addr)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
@@ -313,7 +321,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan int, tokenStr token) {
+func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan int, tokenStr token, remoteAddr string) {
 	var err error
 	logToken := cutToken(rs.token)
 
@@ -373,6 +381,16 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 	}
 	// close up shop
 	ch <- 0 // notify sender
+
+	if as := t.getAdminService(); as != nil {
+		details := ""
+		if err != nil {
+			details = err.Error()
+		}
+		if recErr := as.RecordTunnelEvent(context.Background(), string(tokenStr), TunnelEventDisconnected, remoteAddr, "", "", "", details); recErr != nil {
+			t.Log.Warn().Err(recErr).Msg("Failed to record tunnel disconnect event")
+		}
+	}
 
 	// Cleanup: decrement client count for this token
 	if t.MaxClientsPerToken > 0 {

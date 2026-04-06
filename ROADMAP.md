@@ -12,10 +12,11 @@ for architectural boundaries.
 
 ## Immediate Focus
 
-Active development — bug fixes and documentation improvements.
+Active development — observability foundation and documentation.
 
-- [ ] #147 Timeout of requests to \_token doesn't work [M]
 - [ ] #140 Disambiguate "tunnel server" vs "tunnel" parameter in docs [S]
+- [ ] #272 Wire up admin request recording in request flow [S]
+- [ ] #275 Add admin tunnel control API (force disconnect, token blocking) [M]
 
 ## Near-Term Vision
 
@@ -24,11 +25,9 @@ HTTP-tunneling scope.
 
 ### Observability & Operations
 
-- [ ] #272 Wire up admin request recording in request flow [S]
+- [ ] #274 Add Server-Sent Events endpoint for real-time tunnel events [M]
 - [ ] #273 Add Prometheus metrics endpoint [M] — *Boundary discussion:
   relaxes "no metrics export" rule*
-- [ ] #274 Add Server-Sent Events endpoint for real-time tunnel events [M]
-- [ ] #275 Add admin tunnel control API (force disconnect, token blocking) [M]
 
 ### Feature Enhancements
 
@@ -51,9 +50,10 @@ architectural boundaries.
 
 ## Completed Milestones
 
-### 2025-Q3
+### 2026-Q1
 
 - [x] #277 Migrate logging from log15 to zerolog [L]
+- [x] #147 Timeout of requests to \_token doesn't work [M]
 
 ### 2025-Q2
 
