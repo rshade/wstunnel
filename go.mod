@@ -7,7 +7,7 @@ require (
 	modernc.org/sqlite v1.49.1
 )
 
-require github.com/rs/zerolog v1.35.0
+require github.com/rs/zerolog v1.35.1
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
