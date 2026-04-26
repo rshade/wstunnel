@@ -4,7 +4,7 @@ go 1.25.8
 
 require (
 	github.com/gorilla/websocket v1.5.3
-	modernc.org/sqlite v1.49.1
+	modernc.org/sqlite v1.50.0
 )
 
 require github.com/rs/zerolog v1.35.1
