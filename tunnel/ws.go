@@ -93,6 +93,12 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	tokenStr := token(tok)
 	logTok := cutToken(tokenStr)
 
+	// Check if token is blocked
+	if t.IsTokenBlocked(tokenStr) {
+		httpError(t.Log, w, logTok, "Token is blocked", 403)
+		return
+	}
+
 	// Check if password is required for this token
 	t.tokenPasswordsMutex.RLock()
 	expectedPassword, hasPassword := t.tokenPasswords[tokenStr]
@@ -211,6 +217,10 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		name, whois := ipAddrLookup(t.Log, rs.remoteAddr)
 		rs.setRemoteInfo(name, whois)
 	}()
+	// Register connection for force-disconnect support
+	closeCh := make(chan struct{})
+	deregister := rs.RegisterConnection(closeCh)
+	defer deregister()
 	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel
@@ -218,7 +228,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Spawn goroutine to read responses
 	go wsReader(t, rs, ws, ch, tokenStr, addr)
 	// Send requests
-	wsWriter(rs, ws, ch)
+	wsWriter(rs, ws, ch, closeCh)
 }
 
 func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
@@ -250,7 +260,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 }
 
 // Pick requests off the RemoteServer queue and send them into the tunnel
-func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
+func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int, closeCh chan struct{}) {
 	var req *remoteRequest
 	var err error
 	for {
@@ -264,6 +274,15 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			if err := ws.Close(); err != nil {
 				rs.log.Error().Err(err).Msg("Failed to close websocket")
 			}
+			return
+		case <-closeCh:
+			// force-disconnect from admin API
+			rs.log.Info().Str("ws", wsp(ws)).Msg("WS closing on admin force-disconnect")
+			_ = ws.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "force-disconnected by admin"),
+				time.Now().Add(5*time.Second))
+			time.Sleep(2 * time.Second)
+			_ = ws.Close()
 			return
 		}
 		// See whether the request has already expired
