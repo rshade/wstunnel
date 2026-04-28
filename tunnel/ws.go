@@ -221,6 +221,16 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	closeCh := make(chan struct{})
 	deregister := rs.RegisterConnection(closeCh)
 	defer deregister()
+	// Re-check block status after registration to close the race with admin
+	// BlockToken/DisconnectToken: a block applied between the initial check
+	// and registration could have signaled no connections; this catches that.
+	if t.IsTokenBlocked(tokenStr) {
+		t.Log.Info().Str("token", logTok).Str("ws", wsp(ws)).Msg("Token blocked during connection setup, closing")
+		if err := ws.Close(); err != nil {
+			t.Log.Warn().Err(err).Msg("Failed to close websocket after late block detection")
+		}
+		return
+	}
 	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel

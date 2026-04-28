@@ -457,7 +457,9 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/monitoring"), t.adminService.HandleMonitoring)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/api-docs"), t.adminService.HandleAPIDocs)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/ui"), t.adminService.HandleAdminUI)
-		// Tunnel control endpoints (order matters: /admin/tokens/blocked before /admin/tokens/ for longest-prefix match)
+		// Tunnel control endpoints: ServeMux matches the most specific (longest)
+		// pattern, so /admin/tokens/blocked is preferred over /admin/tokens/
+		// regardless of registration order.
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tunnels/"), t.adminService.HandleTunnelDisconnect)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tokens/blocked"), t.adminService.HandleBlockedTokens)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tokens/"), t.adminService.HandleTokenBlock)

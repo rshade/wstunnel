@@ -104,7 +104,7 @@ const (
 type TunnelEvent struct {
 	ID            int64     `json:"id"`
 	Token         string    `json:"token"`
-	Event         string    `json:"event"` // connected, disconnected, reaped, error
+	Event         string    `json:"event"` // connected, disconnected, reaped, error, force_disconnected, blocked, unblocked
 	RemoteAddr    string    `json:"remote_addr"`
 	RemoteName    string    `json:"remote_name"`
 	RemoteWhois   string    `json:"remote_whois"`
@@ -820,7 +820,7 @@ func (as *AdminService) HandleTunnelDisconnect(w http.ResponseWriter, r *http.Re
 		safeW.Header().Set("Content-Type", "application/json")
 		safeW.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(safeW).Encode(DisconnectResponse{
-			Token:        string(tok),
+			Token:        cutToken(tok),
 			Disconnected: 0,
 			Message:      "tunnel not found",
 		})
@@ -830,7 +830,7 @@ func (as *AdminService) HandleTunnelDisconnect(w http.ResponseWriter, r *http.Re
 	count := rs.CloseAllConnections()
 
 	if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventForceDisconnected,
-		"", "", "", "", fmt.Sprintf("admin force-disconnected %d connection(s)", count)); err != nil {
+		r.RemoteAddr, "", "", "", fmt.Sprintf("admin force-disconnected %d connection(s)", count)); err != nil {
 		as.log.Warn().Err(err).Msg("Failed to record force-disconnect event")
 	}
 
@@ -865,7 +865,7 @@ func (as *AdminService) HandleTokenBlock(w http.ResponseWriter, r *http.Request)
 		}
 
 		if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventBlocked,
-			"", "", "", "", "token blocked by admin"); err != nil {
+			r.RemoteAddr, "", "", "", "token blocked by admin"); err != nil {
 			as.log.Warn().Err(err).Msg("Failed to record block event")
 		}
 
@@ -887,7 +887,7 @@ func (as *AdminService) HandleTokenBlock(w http.ResponseWriter, r *http.Request)
 
 		if existed {
 			if err := as.RecordTunnelEvent(r.Context(), string(tok), TunnelEventUnblocked,
-				"", "", "", "", "token unblocked by admin"); err != nil {
+				r.RemoteAddr, "", "", "", "token unblocked by admin"); err != nil {
 				as.log.Warn().Err(err).Msg("Failed to record unblock event")
 			}
 		}
