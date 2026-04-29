@@ -41,6 +41,7 @@ func setupTestAdminService(t *testing.T) (*AdminService, func()) {
 		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
+		blockedTokens:  make(map[token]time.Time),
 	}
 
 	// Create admin service
@@ -526,6 +527,7 @@ func TestHandleAPIDocs(t *testing.T) {
 		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
+		blockedTokens:  make(map[token]time.Time),
 	}
 
 	// Create admin service
@@ -629,6 +631,7 @@ func TestHandleAdminUI(t *testing.T) {
 		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
+		blockedTokens:  make(map[token]time.Time),
 	}
 
 	// Create admin service
@@ -711,6 +714,7 @@ func TestHandleAdminUIRedirect(t *testing.T) {
 		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
+		blockedTokens:  make(map[token]time.Time),
 	}
 
 	// Create admin service
@@ -777,6 +781,7 @@ func TestGetAPIDocumentation(t *testing.T) {
 		Log:            zerolog.New(os.Stderr).With().Str("pkg", "test").Logger(),
 		serverRegistry: make(map[token]*remoteServer),
 		tokenClients:   make(map[token]int),
+		blockedTokens:  make(map[token]time.Time),
 	}
 
 	// Create admin service
@@ -807,8 +812,9 @@ func TestGetAPIDocumentation(t *testing.T) {
 		if endpoint.Path == "" {
 			t.Error("Endpoint path should not be empty")
 		}
-		if endpoint.Method != "GET" {
-			t.Errorf("Expected all endpoints to be GET, got %s", endpoint.Method)
+		validMethods := map[string]bool{"GET": true, "POST": true, "DELETE": true, "POST/DELETE": true}
+		if !validMethods[endpoint.Method] {
+			t.Errorf("Unexpected method %s for endpoint %s", endpoint.Method, endpoint.Path)
 		}
 		if endpoint.Description == "" {
 			t.Error("Endpoint description should not be empty")
