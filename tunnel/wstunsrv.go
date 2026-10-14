@@ -79,8 +79,10 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             zerolog.Logger
-	readMutex       sync.Mutex // ensure that no more than one goroutine calls the websocket read methods concurrently
-	readCond        *sync.Cond // (NextReader, SetReadDeadline, SetPingHandler, ...)
+	readMutex       sync.Mutex      // ensure that no more than one goroutine calls the websocket read methods concurrently
+	readCond        *sync.Cond      // (NextReader, SetReadDeadline, SetPingHandler, ...)
+	connCloseChans  []chan struct{} // close channels for each active WebSocket connection
+	connCloseMutex  sync.Mutex      // protects connCloseChans
 }
 
 // setClientVersion safely sets the client version
@@ -112,6 +114,43 @@ func (rs *remoteServer) getRemoteInfo() (name, whois string) {
 	return rs.remoteName, rs.remoteWhois
 }
 
+// RegisterConnection adds a close channel for a new WebSocket connection.
+// Returns a deregister function that must be called on disconnect.
+func (rs *remoteServer) RegisterConnection(closeCh chan struct{}) func() {
+	rs.connCloseMutex.Lock()
+	rs.connCloseChans = append(rs.connCloseChans, closeCh)
+	rs.connCloseMutex.Unlock()
+
+	return func() {
+		rs.connCloseMutex.Lock()
+		defer rs.connCloseMutex.Unlock()
+		for i, ch := range rs.connCloseChans {
+			if ch == closeCh {
+				rs.connCloseChans = append(rs.connCloseChans[:i], rs.connCloseChans[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+// CloseAllConnections signals all active WebSocket connections to close gracefully.
+// Returns the number of connections signaled.
+func (rs *remoteServer) CloseAllConnections() int {
+	rs.connCloseMutex.Lock()
+	defer rs.connCloseMutex.Unlock()
+	count := len(rs.connCloseChans)
+	for _, ch := range rs.connCloseChans {
+		select {
+		case <-ch:
+			// already closed
+		default:
+			close(ch)
+		}
+	}
+	rs.connCloseChans = nil
+	return count
+}
+
 // WSTunnelServer a wstunnel server construct
 type WSTunnelServer struct {
 	Port                 int                     // port to listen on
@@ -131,12 +170,59 @@ type WSTunnelServer struct {
 	tokenClientsMutex    sync.RWMutex            // mutex to protect client count map
 	adminService         *AdminService           // admin service for monitoring and auditing
 	adminServiceMutex    sync.RWMutex            // mutex to protect admin service access
+	blockedTokens        map[token]time.Time     // in-memory blocklist of tokens with block timestamp
+	blockedTokensMutex   sync.RWMutex            // mutex to protect blockedTokens
 }
 
 func (t *WSTunnelServer) getAdminService() *AdminService {
 	t.adminServiceMutex.RLock()
 	defer t.adminServiceMutex.RUnlock()
 	return t.adminService
+}
+
+// IsTokenBlocked checks if a token is in the blocklist
+func (t *WSTunnelServer) IsTokenBlocked(tok token) bool {
+	t.blockedTokensMutex.RLock()
+	defer t.blockedTokensMutex.RUnlock()
+	_, blocked := t.blockedTokens[tok]
+	return blocked
+}
+
+// BlockToken adds a token to the in-memory blocklist
+func (t *WSTunnelServer) BlockToken(tok token) {
+	t.blockedTokensMutex.Lock()
+	defer t.blockedTokensMutex.Unlock()
+	t.blockedTokens[tok] = time.Now()
+}
+
+// UnblockToken removes a token from the blocklist. Returns true if the token was blocked.
+func (t *WSTunnelServer) UnblockToken(tok token) bool {
+	t.blockedTokensMutex.Lock()
+	defer t.blockedTokensMutex.Unlock()
+	_, existed := t.blockedTokens[tok]
+	delete(t.blockedTokens, tok)
+	return existed
+}
+
+// GetBlockedTokens returns a copy of the blocked tokens map
+func (t *WSTunnelServer) GetBlockedTokens() map[token]time.Time {
+	t.blockedTokensMutex.RLock()
+	defer t.blockedTokensMutex.RUnlock()
+	result := make(map[token]time.Time, len(t.blockedTokens))
+	for k, v := range t.blockedTokens {
+		result[k] = v
+	}
+	return result
+}
+
+// DisconnectToken force-disconnects all WebSocket connections for a token.
+// Returns the number of connections disconnected.
+func (t *WSTunnelServer) DisconnectToken(tok token) int {
+	rs := t.getRemoteServer(tok, false)
+	if rs == nil {
+		return 0
+	}
+	return rs.CloseAllConnections()
 }
 
 // name Lookups
@@ -259,6 +345,9 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	// Initialize token client count map
 	wstunSrv.tokenClients = make(map[token]int)
 
+	// Initialize token blocklist
+	wstunSrv.blockedTokens = make(map[token]time.Time)
+
 	// Parse token passwords
 	wstunSrv.tokenPasswords = make(map[token]string)
 	if *tokenPass != "" {
@@ -368,6 +457,12 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/monitoring"), t.adminService.HandleMonitoring)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/api-docs"), t.adminService.HandleAPIDocs)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/ui"), t.adminService.HandleAdminUI)
+		// Tunnel control endpoints: ServeMux matches the most specific (longest)
+		// pattern, so /admin/tokens/blocked is preferred over /admin/tokens/
+		// regardless of registration order.
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tunnels/"), t.adminService.HandleTunnelDisconnect)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tokens/blocked"), t.adminService.HandleBlockedTokens)
+		httpMux.HandleFunc(buildPath(t.BasePath, "/admin/tokens/"), t.adminService.HandleTokenBlock)
 		httpMux.HandleFunc(buildPath(t.BasePath, "/admin"), t.adminService.HandleAdminUIRedirect)
 	}
 	t.adminServiceMutex.RUnlock()
@@ -875,11 +970,12 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		maxRequests = 1000
 	}
 	rs = &remoteServer{
-		token:        tok,
-		lastActivity: time.Now(),
-		requestQueue: make(chan *remoteRequest, maxRequests),
-		requestSet:   make(map[int16]*remoteRequest),
-		log:          t.Log.With().Str("token", cutToken(tok)).Logger(),
+		token:          tok,
+		lastActivity:   time.Now(),
+		requestQueue:   make(chan *remoteRequest, maxRequests),
+		requestSet:     make(map[int16]*remoteRequest),
+		connCloseChans: make([]chan struct{}, 0),
+		log:            t.Log.With().Str("token", cutToken(tok)).Logger(),
 	}
 	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
