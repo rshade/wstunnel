@@ -3,74 +3,20 @@
 package tunnel
 
 import (
-	"math/rand"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
 )
 
-type timeoutTestEnv struct {
-	server   *httptest.Server
-	wstunsrv *WSTunnelServer
-	wstuncli *WSTunnelClient
-	wstunURL string
-	token    string
-}
-
-func setupTimeoutTest(t *testing.T) *timeoutTestEnv {
+func setupTimeoutTest(t *testing.T) *tunnelTestEnv {
 	t.Helper()
-
-	token := "test-token-" + strconv.Itoa(rand.Int()%1000000) + "-1234567890"
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return setupTunnelTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/delayed" {
 			time.Sleep(5 * time.Second)
 			_, _ = w.Write([]byte("This response should never be seen"))
 		}
-	}))
-	t.Cleanup(server.Close)
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Failed to listen: %v", err)
-	}
-	wstunsrv := NewWSTunnelServer([]string{
-		"-httptimeout", "2",
-	})
-	wstunsrv.Start(listener)
-	t.Cleanup(wstunsrv.Stop)
-
-	wstuncli := NewWSTunnelClient([]string{
-		"-token", token,
-		"-tunnel", "ws://" + listener.Addr().String(),
-		"-server", server.URL,
-		"-timeout", "10",
-	})
-	if err := wstuncli.Start(); err != nil {
-		t.Fatalf("Error starting client: %v", err)
-	}
-	t.Cleanup(wstuncli.Stop)
-
-	wstunURL := "http://" + listener.Addr().String()
-	start := time.Now()
-	for !wstuncli.IsConnected() {
-		time.Sleep(10 * time.Millisecond)
-		if time.Since(start) > 6*time.Second {
-			t.Fatalf("Client failed to connect within 6 seconds")
-		}
-	}
-
-	return &timeoutTestEnv{
-		server:   server,
-		wstunsrv: wstunsrv,
-		wstuncli: wstuncli,
-		wstunURL: wstunURL,
-		token:    token,
-	}
+	}), "-httptimeout", "2")
 }
 
 func TestTokenRequestTimeout(t *testing.T) {
