@@ -325,13 +325,6 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 	var err error
 	logToken := cutToken(rs.token)
 
-	// the mutex remains locked unless we are within Cond.Wait()
-	rs.readCond.L.Lock()
-	defer func() {
-		rs.readCond.L.Unlock()
-		rs.readCond.Signal()
-	}()
-
 	// continue reading until we get an error
 	for {
 		if err = ws.SetReadDeadline(time.Time{}); err != nil {
@@ -355,23 +348,29 @@ func wsReader(t *WSTunnelServer, rs *remoteServer, ws *websocket.Conn, ch chan i
 		if err != nil {
 			break
 		}
-		// try to match request
+		// try to match request; enqueue under requestSetMutex so it can't race with RetireRequest
+		rb := responseBuffer{response: r, done: make(chan struct{})}
+		enqueued := false
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
 		rs.lastActivity = time.Now()
-		rs.requestSetMutex.Unlock()
-		// let's see...
 		if req != nil {
-			rb := responseBuffer{response: r}
-			// try to enqueue response
 			select {
 			case req.replyChan <- rb:
-				rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV enqueued response")
-				rs.readCond.Wait() // wait for response to be sent
+				enqueued = true
 			default:
-				rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV can't enqueue response")
 			}
-		} else {
+		}
+		rs.requestSetMutex.Unlock()
+		switch {
+		case enqueued:
+			rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV enqueued response")
+			// r is only valid until the next NextReader call, so wait until the
+			// handler has consumed it (or the request was retired unconsumed)
+			<-rb.done
+		case req != nil:
+			rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV can't enqueue response")
+		default:
 			rs.log.Info().Int16("id", id).Str("ws", wsp(ws)).Msg("WS   RCV orphan response")
 		}
 	}
