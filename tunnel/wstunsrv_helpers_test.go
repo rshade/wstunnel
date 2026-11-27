@@ -2,7 +2,6 @@ package tunnel
 
 import (
 	"bytes"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ func newTestRemoteServer(log zerolog.Logger, queueSize int) *remoteServer {
 		requestSet:   make(map[int16]*remoteRequest),
 		lastActivity: time.Now(),
 	}
-	rs.readCond = sync.NewCond(&rs.readMutex)
 	return rs
 }
 

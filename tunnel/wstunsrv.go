@@ -51,6 +51,13 @@ type token string
 type responseBuffer struct {
 	err      error
 	response io.Reader
+	done     chan struct{} // closed when response has been consumed; releases wsReader
+}
+
+func (rb responseBuffer) release() {
+	if rb.done != nil {
+		close(rb.done)
+	}
 }
 
 // A request for a remote server
@@ -79,8 +86,6 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             zerolog.Logger
-	readMutex       sync.Mutex // ensure that no more than one goroutine calls the websocket read methods concurrently
-	readCond        *sync.Cond // (NextReader, SetReadDeadline, SetPingHandler, ...)
 }
 
 // setClientVersion safely sets the client version
@@ -669,21 +674,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 		return
 	}
 
-	// Ensure we retire the request when we pop out of this function
-	// and signal the tunnel reader to continue.
-	// The signal is sent in a goroutine because wsReader holds readCond.L
-	// while reading from the WebSocket. Blocking here would prevent the
-	// HTTP response from being flushed to the client.
-	defer func() {
-		rs.RetireRequest(req)
-		if !retry {
-			go func() {
-				rs.readCond.L.Lock()
-				rs.readCond.Signal()
-				rs.readCond.L.Unlock()
-			}()
-		}
-	}()
+	defer rs.RetireRequest(req)
 
 	// enqueue request
 	err := rs.AddRequest(req)
@@ -713,6 +704,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 
 	select {
 	case resp := <-req.replyChan:
+		defer resp.release()
 		timer.Stop()
 		// if there's no error just respond
 		if resp.err == nil {
@@ -881,7 +873,6 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          t.Log.With().Str("token", cutToken(tok)).Logger(),
 	}
-	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
 	t.Log.Info().Str("token", cutToken(tok)).Msg("WS new tunnel created")
 	return rs
@@ -928,7 +919,15 @@ func (rs *remoteServer) RetireRequest(req *remoteRequest) {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
 	delete(rs.requestSet, req.id)
-	// TODO: should we close the channel? problem is that a concurrent send on it causes a panic
+	// release wsReader if it enqueued a response that the handler abandoned
+	for {
+		select {
+		case rb := <-req.replyChan:
+			rb.release()
+		default:
+			return
+		}
+	}
 }
 
 func makeRequest(r *http.Request, httpTimeout time.Duration) *remoteRequest {
